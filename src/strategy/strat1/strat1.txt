@@ -1,0 +1,1 @@
+This strategy has the objective to take decision with the analyze of the order book.

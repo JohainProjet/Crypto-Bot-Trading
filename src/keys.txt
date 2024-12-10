@@ -1,0 +1,2 @@
+API=mNn7eVsgiuGIucNb5alaUkNRaFKrcdRY9SXnxm51YQaPfgqpI5tWSIyOJXFH9RyO
+secret=GPddW7ylb3MiOz21TkIZWi0ZRk61S1AiABwjgaygmtD5Cptez4hFxPwpJINLLX3l
