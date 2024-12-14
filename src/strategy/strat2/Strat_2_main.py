@@ -1,22 +1,30 @@
-import pprint
+import logging.config
 import time
-import pandas as pd
-from binance.lib.utils import config_logging
 from binance.websocket.spot.websocket_stream import SpotWebsocketStreamClient
-from get_data_2 import message_handler2
+from .get_data_2 import messageProcessing, dataframe_storage, crypto_bought, portefeuille_test
+import logging
 
+logging.basicConfig(level=logging.INFO)
 
-def main():
+with open(r"C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading\src\strategy\strat2\listpairs.txt", 'r') as f:
+    listTickers = f.read().splitlines()
 
-    ws_client = SpotWebsocketStreamClient(on_message=message_handler2, is_combined=True)
-    ws_client.kline(symbol="troyusdt", interval="2h")
-    ws_client.kline(symbol="troyusdt", interval="3m")
+def strategy2_main(time_to_sleep : int):
+    ws_client = SpotWebsocketStreamClient(on_message=messageProcessing, is_combined=True)
     
-    time.sleep(40)
+    list_ticker_kline = []
+    for ticker in listTickers:
+        list_ticker_kline.append(ticker+'@kline_2h')
+        list_ticker_kline.append(ticker+'@kline_3m')
+    ws_client.subscribe(stream=list_ticker_kline)
 
-    print("closing ws connection")
+    time.sleep(time_to_sleep)
+    logging.info("closing ws connection")
+    ws_client.unsubscribe(stream=list_ticker_kline)
+    logging.info('writing in excel')
+    logging.info(crypto_bought)
+    dataframe_storage.to_excel("Storage_stats.xlsx")
+    print(portefeuille_test.df_transaction_history)
     ws_client.stop()
-
-
 if __name__ == '__main__':
-    main()
+    strategy2_main()
