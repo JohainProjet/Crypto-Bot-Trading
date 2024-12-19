@@ -6,6 +6,6 @@ def main(strategy : int, time_to_sleep : int):
         strategy2_main(time_to_sleep)
     else:
         print("Stratégie non implémentée.")
-
+    return 0
 if __name__ == '__main__':
-    main(2, 1300)
+    main(2, 1000)
