@@ -17,7 +17,7 @@ multi_columns = pd.MultiIndex.from_tuples([('Variation', '3m'), ('Variation', '2
                                           ('Price is going up', None)])
 dataframe_storage = pd.DataFrame(columns = multi_columns)
 
-limits = {'volume' : 3, 'variation' : 3}
+limits = {'volume' : 2, 'variation' : 2.3}#(2, 2.3) à tester.
 price_is_going_up : bool = False
 crypto_bought = []
 portefeuille_test = Portfolio(1000, {})
@@ -33,6 +33,7 @@ def messageProcessingkline3m(_, source):
         return
     if not '3m' in message['stream']:
         print('erreur')
+    
     ticker = message['stream'].upper().split('@')[0]
     data :dict = message['data']['k']
     variation_3m = float(data['h'])-float(data['l'])
@@ -47,19 +48,26 @@ def messageProcessingkline3m(_, source):
     dataframe_storage.loc[ticker, ('Price is going up', '')] = price_is_going_up
 
     if detect_pump(dataframe_storage, limits):
+        cost_in_usd = 10
+        if datetime.datetime.now().minute % 15 == 0:
+            cost_in_usd = 100
+
         crypto_to_buy = dataframe_storage[dataframe_storage.loc[:, ('Order', 'Buy')]].index.to_list()
         real_crypto_to_buy = [crypto for crypto in crypto_to_buy if crypto not in crypto_bought]
         crypto_bought.extend(real_crypto_to_buy)
         for local_ticker in real_crypto_to_buy:
             ticker_price = float(message['data']['k']['c'])
-            add_order("BUY", "MARKET", local_ticker, 10/ticker_price)
+            add_order("BUY", "MARKET", local_ticker, cost_in_usd/ticker_price)
+            print(f'TICKER : {ticker}')
             print(f"Variation 3m : {dataframe_storage.loc[ticker, ('Variation', '3m')]} | Volume 3m : {dataframe_storage.loc[ticker, ('Volume', '3m')]}")
             print(f"Variation 2h : {dataframe_storage.loc[ticker, ('Variation', '2h')]} | Volume 2h : {dataframe_storage.loc[ticker, ('Volume', '2h')]}")          
-            portefeuille_test.transaction_order("BUY", datetime.datetime.fromtimestamp(message['data']['E']/1000), ticker, 10/ticker_price, ticker_price)
+            portefeuille_test.transaction_order("BUY", datetime.datetime.fromtimestamp(message['data']['E']/1000), ticker, cost_in_usd/ticker_price, ticker_price)
     if detect_dump(ticker, portefeuille_test, float(message['data']['k']['c'])):
         ticker_price = float(message['data']['k']['c'])
-        add_order("SELL", "MARKET", ticker, 10/ticker_price)
-        portefeuille_test.transaction_order("SELL", datetime.datetime.fromtimestamp(message['data']['E']/1000), ticker, 10/ticker_price, ticker_price)
+        quantity_bought = portefeuille_test.actifs[ticker]['quantity']
+        add_order("SELL", "MARKET", ticker, quantity_bought)
+        crypto_bought.remove(ticker)
+        portefeuille_test.transaction_order("SELL", datetime.datetime.fromtimestamp(message['data']['E']/1000), ticker, quantity_bought, ticker_price)
     else:
         pass
 
@@ -84,11 +92,11 @@ def messageProcessingkline2h(_, source):
     dataframe_storage.loc[ticker, ('Volume', '2h')] = volume_2h
 
 def on_open(_):
-    #C'est avant que les flux soient ouvert donc c'est bizarre
     print(f'Strategy start : {datetime.datetime.now()}')
 
 def on_close(_):
     print(portefeuille_test)
     print(portefeuille_test.evaluate_portfolio_value())
+
     dataframe_storage.to_excel("Storage_stats.xlsx")
     portefeuille_test.df_transaction_history.to_excel("Transaction History.xlsx")

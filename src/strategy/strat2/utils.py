@@ -24,7 +24,7 @@ def detect_dump(ticker, portefeuille_test, actual_price):
     actual_max_price = actual_price
     actual_max_price = max(actual_max_price, actual_price)
     #Configurer ordre stop loss doit être beaucoup mieux/doit être fait dans la partie pump dès qu'on achète
-    stop_loss_condition = 0.98*entry_price >= actual_price
+    stop_loss_condition = 0.98*entry_price >= actual_price #0.98 et 0.99 en dessous
 
     take_gain_condition = 0.99*actual_max_price >= actual_price #pareil pour un order de vente défini dynamiquement
     return stop_loss_condition or take_gain_condition
