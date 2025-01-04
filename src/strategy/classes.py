@@ -5,8 +5,8 @@ import json
 from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
 
 
-
 class Portfolio:
+    cash_at_start = 200
     def __init__(self, cash : float, actifs : dict = {}):
         self.creation_date = datetime.datetime.now()
         self.cash = cash
@@ -40,7 +40,7 @@ class Portfolio:
             self.actifs[ticker]['ticker_price'] = ticker_price
         self.cash -= usd_price + fees_operation
         self.add_to_transaction_history('BUY', transaction_time, ticker, quantity, ticker_price)
-    
+
     def execute_sell(self, transaction_time, ticker, quantity, ticker_price, fees_operation):
         usd_price = quantity*ticker_price
         if ticker not in self.actifs:
@@ -69,13 +69,11 @@ class Portfolio:
                         'Cash cost' : round(cash_cost, 2)}
 
         self.df_transaction_history = pd.concat([self.df_transaction_history, pd.DataFrame([transaction])], ignore_index = True)
-        print(self.df_transaction_history)
 
-    @staticmethod
-    def save(start_date, cash, assets_value):
+    def save(self, start_date, cash, assets_value):
         with open('results.txt', 'a') as f:
-            f.write(f"Start Date : {start_date} | End Date : {datetime.datetime.now()} | Cash : {cash} | Assets_value : {assets_value} | Portfolio_change : {((cash+assets_value)/1000 - 1)*100:.2f}%\n")
-    
+            f.write(f"Start Date : {start_date} | End Date : {datetime.datetime.now()} | Cash : {cash} | Assets_value : {assets_value} | Portfolio_change : {((cash+assets_value)/self.cash_at_start - 1)*100:.2f}%\n")
+
     def message_api(self, _, source):
         message : dict = json.loads(source)
         if 'error' in message:
@@ -91,7 +89,7 @@ class Portfolio:
             time.sleep(10)
             binance_get_price_api_client.stop()
         except Exception as e:
-            print(f"Can get price : {e}")
+            print(f"Prix non récupéré : {e}")
 
     def get_assets_value(self):
         self.fetch_prices()
@@ -100,7 +98,7 @@ class Portfolio:
              assets_value+= self.actifs[dict_symbol_price['symbol']]['quantity'] * float(dict_symbol_price['price'])
         return assets_value
     
-    def evaluate_portfolio_value(self, save_to_file = True, verbose = True):
+    def evaluate_portfolio_value(self, save_to_file = False, verbose = True):
         cash = self.cash
         assets_value = self.get_assets_value()
         portfolio_value = cash+assets_value

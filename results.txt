@@ -15,4 +15,5 @@ Start Date : 2024-12-24 20:43:12.334218 | End Date : 2024-12-24 22:43:36.905706 
 Start Date : 2024-12-24 22:54:39.806060 | End Date : 2024-12-24 23:55:04.381081 | Cash : 990.0436935365368 | Assets_value : 10.044280442804428 | Portfolio_change : 0.01%
 Start Date : 2024-12-25 10:13:43.126534 | End Date : 2024-12-25 10:47:28.061523 | Cash : 899.9412915851271 | Assets_value : 100.0 | Portfolio_change : -0.01%
 Start Date : 2024-12-25 10:13:43.126534 | End Date : 2024-12-25 11:20:59.647855 | Cash : 899.9412915851271 | Assets_value : 101.63826998689385 | Portfolio_change : 0.16%
-Start Date : 2024-12-31 14:08:05.261868 | End Date : 2024-12-31 14:13:18.670008 | Cash : 200 | Assets_value : 0 | Portfolio_change : -80.00%
+Start Date : 2025-01-01 12:28:52.535866 | End Date : 2025-01-01 17:29:06.111113 | Cash : 175.12577294638504 | Assets_value : 25.045617593902335 | Portfolio_change : 0.09%
+Start Date : 2025-01-01 12:28:52.535866 | End Date : 2025-01-01 17:29:17.382977 | Cash : 175.12577294638504 | Assets_value : 25.044249587758333 | Portfolio_change : 0.09%
