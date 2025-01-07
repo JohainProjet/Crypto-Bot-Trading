@@ -1,11 +1,11 @@
 import json
-from src.strategy.strat2.shared import global_dictionnary, dataframe_storage, crypto_bought, limits, portefeuille_test
-from src.strategy.strat2.utils import detect_pump, detect_dump, binance_api_client, getTickerTickSize
+from src.strategy.strat2.shared import global_dictionnary, dataframe_storage, crypto_bought, limits, portefeuille_test, actual_max_price
+from src.strategy.strat2.utils import detect_pump, detect_dump, binance_api_client
 import datetime
 
 
 def messageProcessingkline3m(_, source=None, test_data=None):
-
+    global actual_max_price
     if test_data:
         message = test_data
     else:
@@ -18,9 +18,9 @@ def messageProcessingkline3m(_, source=None, test_data=None):
     ticker = data['s']
     variation_3m = float(data['h'])-float(data['l'])
     volume_3m = float(data['v'])
-    closed_price = float(data['c'])
+    close_price = float(data['c'])
     open_price = float(data['o'])
-    price_is_going_up = bool(closed_price > open_price)
+    price_is_going_up = bool(close_price > open_price)
     global_dictionnary['variation3m'] = variation_3m
     global_dictionnary['volume3m'] = volume_3m
     dataframe_storage.loc[ticker, ('Variation', '3m')] = variation_3m
@@ -28,11 +28,10 @@ def messageProcessingkline3m(_, source=None, test_data=None):
     dataframe_storage.loc[ticker, ('Price is going up', '')] = price_is_going_up
 
     if detect_pump(dataframe_storage, ticker, limits, crypto_bought):
-        cash_used = '5'
+        cash_used = '6'
         if datetime.datetime.now().minute % 15 == 0:
-            cash_used = '50'
+            cash_used = '6'
         crypto_bought.append(ticker)
-
 
         binance_api_client.new_order(symbol=ticker,
                                           side="BUY",
@@ -40,14 +39,10 @@ def messageProcessingkline3m(_, source=None, test_data=None):
                                           quoteOrderQty=cash_used,
                                           newClientOrderId=f'buy_market_{ticker}',
                                           newOrderRespType="FULL")
-        ticker_price = float(message['data']['k']['c']) #A obtenir par le binance api messagehandler
 
         print(f'TICKER : {ticker}')
         print(f"Variation 3m : {dataframe_storage.loc[ticker, ('Variation', '3m')]} | Volume 3m : {dataframe_storage.loc[ticker, ('Volume', '3m')]}")
         print(f"Variation 2h : {dataframe_storage.loc[ticker, ('Variation', '2h')]} | Volume 2h : {dataframe_storage.loc[ticker, ('Volume', '2h')]}")
-
-        #Cette ligne est à bouger dans le messageProcessing qui gère les ordres à envoyer (sûr à 100%), faudra récupérer les caractéristiques
-        #ticker, cash_used/ticker_price, ticker_price
 
         #A finir : 
         # Gérer la gestion des stepsize pour les ordres qui sont passés. Y'a aussi ça a faire pour le stopprice
@@ -58,17 +53,9 @@ def messageProcessingkline3m(_, source=None, test_data=None):
         #comme le prix auquel s'est passé le trade ou par exemple la quantité, données qui sont utiles pour les rajouter dans transaction_order mais également
         # pour définir les ordres stoploss
 
-    if detect_dump(ticker, portefeuille_test, closed_price):
-
-        quantity_bought = portefeuille_test.actifs[ticker]['quantity']
-        binance_api_client.new_order(symbol=ticker,
-                                          side="SELL", 
-                                          type="MARKET", 
-                                          quantity=quantity_bought,
-                                          newClientOrderId=f'sell_market_{ticker}',
-                                          newOrderRespType="FULL")
-        #crypto_bought.remove(ticker)
-        portefeuille_test.transaction_order("SELL", datetime.datetime.fromtimestamp(message['data']['E']/1000), ticker, quantity_bought, closed_price)
+    if ticker in actual_max_price and close_price > actual_max_price[ticker]:
+        pass
+        #update orders (ticker, closed_price)
     else:
         pass
 
