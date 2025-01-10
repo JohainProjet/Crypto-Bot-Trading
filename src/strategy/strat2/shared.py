@@ -6,7 +6,7 @@ from src.utils import get_api_key
 api_key, api_secret = get_api_key()
 client = Client(api_key, api_secret)
 
-actual_max_price = {}
+ticker_bought_actual_max_price = {}
 
 global_dictionnary : dict = {'variation2h' : 0,
                             'volume2h' : 0,
@@ -20,7 +20,7 @@ multi_columns = pd.MultiIndex.from_tuples([('Variation', '3m'), ('Variation', '2
 
 dataframe_storage = pd.DataFrame(columns = multi_columns)
 
-limits = {'volume' : 6, 'variation' : 6}#(2, 2.3)
+limits = {'volume' : 7, 'variation' : 7}#(2, 2.3)
 
 crypto_bought = []
 

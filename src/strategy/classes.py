@@ -98,7 +98,7 @@ class Portfolio:
              assets_value+= self.actifs[dict_symbol_price['symbol']]['quantity'] * float(dict_symbol_price['price'])
         return assets_value
     
-    def evaluate_portfolio_value(self, save_to_file = False, verbose = True):
+    def evaluate_portfolio_value(self, save_to_file = True, verbose = True):
         cash = self.cash
         assets_value = self.get_assets_value()
         portfolio_value = cash+assets_value
