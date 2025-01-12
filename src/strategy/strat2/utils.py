@@ -14,9 +14,9 @@ def message_handler_orders(_, source):
     message : dict = json.loads(source)
     if 'error' in message:
         error : dict = message['error']
-        print('Code : ', error['code'])
-        print('Message : ', error['msg'])
-        print(f'data_error : {error.get('data', None)}')
+        logging.debug('Code : ', error['code'])
+        logging.debug('Message : ', error['msg'])
+        logging.debug(f'data_error : {error.get('data', None)}')
         return
     result = message.get("result")
 
@@ -33,7 +33,6 @@ def message_handler_orders(_, source):
         ticker = result['symbol']
         commission = float(fills['commission'])
         commissionAsset = fills['commissionAsset']
-
 
         """ portefeuille_test.transaction_order(side, 
                                             workingTimeOrder, 
@@ -54,20 +53,20 @@ def define_stop_losses(ticker, entry_price):
     stepSize, tickSize = getTickerTickSize(ticker)
     ticker_bought_actual_max_price[ticker] = {'entry_price' : entry_price,
                                               'stepSize' : stepSize,
-                                              'tickSize' : tickSize} 
+                                              'tickSize' : tickSize}
     #stop_loss_condition = 0.98*entry_price >= actual_price #0.98 et 0.99 en dessous
     stopLossPrice = round((0.996*entry_price//tickSize)*tickSize,8)
     #Probleme quand y'a pas assez de cash a debug
     quantity_bought = str(round((portefeuille_test.actifs[ticker]['quantity']//stepSize)*stepSize,8))
-    print("Entry_price : ", entry_price, "StopPrice : ", stopLossPrice)
+    logging.debug("Entry_price : ", entry_price, "StopPrice : ", stopLossPrice)
     print()
     binance_api_client.new_order(symbol=ticker,
-                                        side="SELL",
-                                        type="STOP_LOSS",
-                                        quantity=quantity_bought,
-                                        stopPrice=stopLossPrice,
-                                        newClientOrderId=f'stop_loss_{ticker}',
-                                        newOrderRespType="FULL")
+                                 side="SELL",
+                                 type="STOP_LOSS",
+                                 quantity=quantity_bought,
+                                 stopPrice=stopLossPrice,
+                                 newClientOrderId=f'stop_loss_{ticker}',
+                                 newOrderRespType="FULL")
 
 
 def detect_pump(dataframe_storage, ticker, limits, crypto_bought):
@@ -83,7 +82,7 @@ def detect_pump(dataframe_storage, ticker, limits, crypto_bought):
 
     return variation_condition and volume_condition and price_is_going_up_condition
 
-def detect_dump(ticker, portefeuille_test, actual_price):
+""" def detect_dump(ticker, portefeuille_test, actual_price):
     global actual_max_price
     if not ticker in portefeuille_test.actifs:
         return False
@@ -99,7 +98,7 @@ def detect_dump(ticker, portefeuille_test, actual_price):
 
     take_gain_condition = 0.99*actual_max_price[ticker] >= actual_price #pareil pour un order de vente défini dynamiquement
 
-    return stop_loss_condition or take_gain_condition
+    return stop_loss_condition or take_gain_condition """
 
 
 def getTickerTickSize(ticker):

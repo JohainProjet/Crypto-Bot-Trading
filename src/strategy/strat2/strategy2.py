@@ -1,9 +1,10 @@
 import json
 from src.strategy.strat2.shared import global_dictionnary, dataframe_storage, crypto_bought, limits, portefeuille_test, ticker_bought_actual_max_price
-from src.strategy.strat2.utils import detect_pump, detect_dump, define_stop_losses, binance_api_client
+from src.strategy.strat2.utils import detect_pump, define_stop_losses, binance_api_client
 import datetime
 import time
 import threading
+import logging
 
 def messageUserData(_, source):
     message : dict = json.loads(source)
@@ -31,7 +32,7 @@ def messageUserData(_, source):
                                                 excuted_price)
             del ticker_bought_actual_max_price[message['s']]
         elif message.get('x', None) == 'TRADE' and message['S'] == 'BUY':
-            print('ACHAT REALISE')
+            logging.debug('ACHAT REALISE')
             print(f"Ticker : {message['s']} | Prix d'achat : {message['L']}")
             side = message['S']
             workingTimeOrder = datetime.datetime.fromtimestamp(int(message['T'])/1000)
@@ -71,9 +72,9 @@ def messageProcessingkline3m(_, source=None, test_data=None):
     dataframe_storage.loc[ticker, ('Price is going up', '')] = price_is_going_up
 
     if detect_pump(dataframe_storage, ticker, limits, crypto_bought):
-        cash_used = '7'
+        cash_used = '30'
         if datetime.datetime.now().minute % 15 == 0:
-            cash_used = '7'
+            cash_used = '30'
         crypto_bought.append(ticker)
 
         binance_api_client.new_order(symbol=ticker,

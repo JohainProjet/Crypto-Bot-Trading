@@ -53,7 +53,7 @@ class Portfolio:
         self.add_to_transaction_history('SELL', transaction_time, ticker, quantity, ticker_price)
         if self.actifs[ticker]['quantity'] == 0:
             del self.actifs[ticker]
-    
+
     @staticmethod
     def calculate_transaction_fees(quantity, ticker_price):
         fees_transaction = 0.001
@@ -61,7 +61,7 @@ class Portfolio:
 
     def add_to_transaction_history(self, transaction_type, transaction_time, ticker, quantity, ticker_price):
         cash_cost = quantity * ticker_price * (-1 if transaction_type == 'BUY' else 1) - self.calculate_transaction_fees(quantity, ticker_price)
-        transaction = {'Time' : transaction_time, 
+        transaction = {'Time' : transaction_time,
                         'Type' : transaction_type,
                         'Ticker' : ticker,
                         'Quantity' : quantity,

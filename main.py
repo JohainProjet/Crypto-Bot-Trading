@@ -7,7 +7,7 @@ def main(strategy : int, time_to_sleep : int):
         print("Stratégie non implémentée.")
     return 0
 if __name__ == '__main__':
-    main(2, 5000)
+    main(2, 1000)
     exit()
 
     #Ouvrir un websocket spécialement pour les monnaie buy dans le dataframe pour vérifier l'order book par exemple

@@ -33,5 +33,4 @@ def get_open_orders_and_cancel(cancel = False):
     time.sleep(8)
     client.stop()
 
-
 get_open_orders_and_cancel(cancel=True)

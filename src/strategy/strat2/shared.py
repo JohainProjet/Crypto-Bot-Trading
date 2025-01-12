@@ -20,7 +20,7 @@ multi_columns = pd.MultiIndex.from_tuples([('Variation', '3m'), ('Variation', '2
 
 dataframe_storage = pd.DataFrame(columns = multi_columns)
 
-limits = {'volume' : 7, 'variation' : 7}#(2, 2.3)
+limits = {'volume' : 10, 'variation' : 10}#(2, 2.3)
 
 crypto_bought = []
 
