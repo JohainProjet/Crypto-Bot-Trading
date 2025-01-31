@@ -1,19 +1,19 @@
-from src.strategy.strat2.Strat_2_main import strategy2_main
-
-def main(strategy : int, time_to_sleep : int):
-    if strategy == 2:
-        strategy2_main(time_to_sleep)
-    else:
-        print("Stratégie non implémentée.")
-    return 0
+from bot.strategy.pump_dump import PumpDump, MessageHandler
+from bot.utils.helpers import Parameters
+from bot.utils.helpers import Portfolio
+from bot.strategy.pump_dump import WebsocketManager
 if __name__ == '__main__':
-    main(2, 1000)
-    exit()
+    #Define parameters
+    limits = {'volume' : 2,#2
+              'variation' : 2.3,
+              'nbOfTrades' : 3}#6 trop haut # 4 encore trop haut même si mieux ?
+    stop_loss_price = 0.99 #0.985
+    portfolio = Portfolio(500)
+    parameters = Parameters(limits, stop_loss_price)
 
-    #Ouvrir un websocket spécialement pour les monnaie buy dans le dataframe pour vérifier l'order book par exemple
-    # (rajouter une prise en compte des coups de trransactions)
+    strategy = PumpDump(parameters=parameters, portfolio=portfolio, durationTime=38000, isTestMode=True)
 
-    #Si le volume ne suit pas et le nombre de transaction n'augmente aps on peut vendre directement au lieu d'attendre par exemple
-    #changer pour ne pas afficher tout le tableau des transaction à chaque fois mais plutôt la dernière ligne. Faire également que ce soit possible de voir
-    # ce qui est utilisé dans le save mais à des moments partiel du temps. Par exemple si le porgrmamme dure 10000 secondes, on coupe en 5 et on affichera la ligne qi va dans
-    # results à ce moment là.
+    strategy.websocketManager.message_handler.set_pump_and_dump(strategy)
+
+    strategy.get_open_orders_and_cancel()
+    strategy.start()

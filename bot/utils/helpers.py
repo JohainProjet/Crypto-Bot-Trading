@@ -3,13 +3,15 @@ import pandas as pd
 import time
 import json
 from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
+from dataclasses import dataclass
+from dataclasses import field
 
 
 class Portfolio:
-    cash_at_start = 200
     def __init__(self, cash : float, actifs : dict = {}):
         self.creation_date = datetime.datetime.now()
         self.cash = cash
+        self.cash_at_start = cash
         self.actifs = actifs
         self.list_prices = []
         self.asset_value = self.get_assets_value() if self.actifs else 0
@@ -18,27 +20,30 @@ class Portfolio:
     def __str__(self):
         return f'Cash : {self.cash} \n Actifs : {self.actifs} \n Transaction history : {self.df_transaction_history}'
 
+    def check_buy_sell(self, transaction_type, ticker, quantity, ticker_price):
+        fees_operation = self.calculate_transaction_fees(quantity, ticker_price)
+        if transaction_type == 'BUY':
+            assert self.cash >= quantity*ticker_price + fees_operation, 'Transaction failed, not enough cash.'
+        elif transaction_type == 'SELL':
+            assert ticker in self.actifs, 'Transaction failed, asset is not in portfolio.'
+
     def transaction_order(self, transaction_type, transaction_time, ticker, quantity, ticker_price):
         fees_operation = self.calculate_transaction_fees(quantity, ticker_price)
-
+        self.check_buy_sell(transaction_type, ticker, quantity, ticker_price)
         if transaction_type == 'BUY':
             self.execute_buy(transaction_time, ticker, quantity, ticker_price, fees_operation)
         elif transaction_type == 'SELL':
             self.execute_sell(transaction_time, ticker, quantity, ticker_price, fees_operation)
         else:
             raise ValueError("Le type de transaction doit être 'BUY' ou 'SELL'.")
-    
+
     def execute_buy(self, transaction_time, ticker, quantity, ticker_price, fees_operation):
-        usd_price = quantity*ticker_price
-        if self.cash <= usd_price + fees_operation:
-            print('Transaction failed, not enough cash')
-            return
         if ticker not in self.actifs:
             self.actifs[ticker] = {"quantity" : quantity, "ticker_price" : ticker_price}
         else:
             self.actifs[ticker]['quantity'] += quantity
             self.actifs[ticker]['ticker_price'] = ticker_price
-        self.cash -= usd_price + fees_operation
+        self.cash -= quantity*ticker_price + fees_operation
         self.add_to_transaction_history('BUY', transaction_time, ticker, quantity, ticker_price)
 
     def execute_sell(self, transaction_time, ticker, quantity, ticker_price, fees_operation):
@@ -80,7 +85,7 @@ class Portfolio:
             print(message['error']['msg'])
         else:
             self.list_prices = message["result"]
-    
+
     def fetch_prices(self):
         try:
             binance_get_price_api_client = SpotWebsocketAPIClient(on_message=self.message_api)
@@ -111,3 +116,23 @@ class Portfolio:
         if save_to_file:
             self.save(self.creation_date, cash, assets_value)
         return portfolio_value
+    
+
+@dataclass
+class Parameters:
+    limits : dict
+    stop_loss_price : int
+    ticker_bought_actual_max_price : dict = field(default_factory=dict)
+    crypto_bought : list = field(default_factory=list)
+
+
+
+def periodic_sleep(total_duration, interval):
+    elapsed_time = 0
+
+    while elapsed_time < total_duration:
+        time.sleep(interval)
+        elapsed_time += interval
+
+        remaining_time = total_duration- elapsed_time
+        print(f"Temps écoulé : {elapsed_time} secondes. Temps restant : {remaining_time} secondes.")
