@@ -72,8 +72,11 @@ class Portfolio:
                         'Quantity' : quantity,
                         'Ticker price' : ticker_price,
                         'Cash cost' : round(cash_cost, 2)}
-
-        self.df_transaction_history = pd.concat([self.df_transaction_history, pd.DataFrame([transaction])], ignore_index = True)
+        if self.df_transaction_history.empty:
+            self.df_transaction_history = pd.DataFrame([transaction])
+        else:
+            self.df_transaction_history = pd.concat([self.df_transaction_history, pd.DataFrame([transaction])], ignore_index = True)
+        print(self.df_transaction_history)
 
     def save(self, start_date, cash, assets_value):
         with open('results.txt', 'a') as f:

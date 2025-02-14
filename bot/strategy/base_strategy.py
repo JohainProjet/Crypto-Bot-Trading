@@ -1,6 +1,7 @@
-from abc import ABC, abstractmethod
-from config import get_api_keys
-from binance.websocket.spot.websocket_stream import SpotWebsocketStreamClient
-from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
-from binance.spot import Spot as Client
-import time
+from abc import ABC
+
+
+class Strategy(ABC):
+    def __init__(self, durationTime, isTestMode : str):
+        self.durationTime = durationTime
+        self.isTestMode = isTestMode
