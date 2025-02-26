@@ -1,6 +1,7 @@
 import os
 import datetime
 import json
+import time
 from binance.spot import Spot as Client
 from bot.trading.base_trading import TradingManager
 from bot.strategy.base_strategy import Strategy
@@ -47,19 +48,27 @@ class BackTesting(TradingManager):
                     self.messageProcessingkline3mBackTesting(event)
                 elif 'ticker' in event['stream']:
                     self.messageProcessingRolling1hBackTesting(event)
+        self.portfolio.generate_stats_for_storage(time_)
+        self.stop()
+        return
 
     def stop(self):
-        pass
+        with open("trades.txt", "a") as f:
+            f.write("\n")
+            self.portfolio.df_transaction_history.to_string(f, index=True)
+            f.write("\n\n")
 
-    def buy(self, ticker, cash_used, excuted_price=0, time=0):
-        executedQty = cash_used/excuted_price
+    def buy(self, ticker, cash_used, executed_price=0, time=0):
+        executedQty = cash_used/executed_price
+        stepSize = self.getTickerTickSize(ticker)[0]
+        executedQty = round((executedQty//stepSize)*stepSize,8)
         workingTimeOrder = datetime.datetime.fromtimestamp(int(time)/1000)
         self.portfolio.transaction_order('BUY',
                                         workingTimeOrder,
                                         ticker,
                                         executedQty,
-                                        excuted_price)
-        self.datas.strategy.define_stop_losses(ticker, excuted_price)
+                                        executed_price)
+        self.datas.strategy.define_stop_losses(ticker, executed_price)
         print(self.portfolio.df_transaction_history)
 
 
@@ -75,7 +84,7 @@ class BackTesting(TradingManager):
         workingTimeOrder = datetime.datetime.fromtimestamp(int(data['E'])/1000)
 
         current_price = float(data['k']['c'])
-        print(self.orders[ticker]['stopLossPrice'], current_price)
+        #print(self.orders[ticker]['stopLossPrice'], current_price)
         if self.orders[ticker]['stopLossPrice'] >= current_price:
             try:
                 self.portfolio.transaction_order('SELL',
@@ -86,53 +95,71 @@ class BackTesting(TradingManager):
                 del self.orders[ticker]
             except ValueError:
                 return
-            
             print(self.portfolio.df_transaction_history)
-    
-
 
 class Datas:
+    dict_global = {}
+    path_ = r'C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading\bot\data\historical_datas'
+    path_files_klines = []
+    path_files_rolling = []
     def __init__(self, listTickers, startDate, endDate, strategy = None):
         self.listTickers = listTickers
         self.strategy = strategy
-        self.path = r'C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading\bot\data\historical_datas'
-        self.path_files_klines = [os.path.join(self.path, 'kline3m', f'{ticker}.txt') for ticker in listTickers]
-        self.path_files_rolling = [os.path.join(self.path, 'historical_window_1h', f'{ticker}.txt') for ticker in listTickers]
         self.startDate = startDate
         self.endDate = endDate
-        self.dict_time = self.fill_dict_time()
+        if not Datas.path_files_klines:
+            Datas.path_files_klines = [os.path.join(Datas.path_, 'kline3m', f'{ticker}.txt') for ticker in listTickers]
+        if not Datas.path_files_rolling:
+            Datas.path_files_rolling = [os.path.join(Datas.path_, 'historical_window_1h', f'{ticker}.txt') for ticker in listTickers]
+        if not type(self).dict_global:
+            type(self).create_global_dict_time(self.startDate, self.endDate)
+        self.dict_time = type(self).dict_global
+        
+    @classmethod
+    def create_global_dict_time(cls, startDate, endDate):
+        cls.dict_global = cls.fill_dict_time(startDate, endDate)
 
     def set_strategy(self, strategy : Strategy):
         self.strategy = strategy
 
-    def fill_dict_time(self):
+    @classmethod
+    def fill_dict_time(cls, startDate, endDate):
+        t1 = time.time()
         dict_time = defaultdict(list)
-        for path in self.path_files_klines:
+        for path in cls.path_files_klines:
             try:
                 with open(path, 'r') as f:
                     for line in f:
                         try:
                             message = json.loads(line)
-                            time = datetime.datetime.fromtimestamp(int(message['data']["E"])/1000)
-                            if self.startDate <= time <= self.endDate: 
-                                dict_time[time].append(message)
+                            time_ = datetime.datetime.fromtimestamp(int(message['data']["E"])/1000)
+                            if startDate <= time_ <= endDate: 
+                                dict_time[time_].append(message)
                         except json.JSONDecodeError:
                             continue
             except FileNotFoundError:
                 pass
-        for path in self.path_files_rolling:
+        for path in cls.path_files_rolling:
             try:
                 with open(path, 'r') as f:
                     for line in f:
                         try:
                             message = json.loads(line)
-                            time = datetime.datetime.fromtimestamp(int(message["data"]['E'])/1000)
-                            if self.startDate <= time <= self.endDate: 
-                                dict_time[time].append(message)
+                            time_ = datetime.datetime.fromtimestamp(int(message["data"]['E'])/1000)
+                            if startDate <= time_ <= endDate: 
+                                dict_time[time_].append(message)
                         except json.JSONDecodeError:
                             continue
             except FileNotFoundError:
                 pass
         
         sorted_items = dict(sorted(dict_time.items(), key=lambda item: item[0]))
+        t2 = time.time()
+        print(len(sorted_items))
+        print("Temps pris pour former le dicitonnaire de taille", t2-t1)
+        cls.dict_global = sorted_items
+        """ result = {str(int(key.timestamp())*1000) : value for key, value in sorted_items.items()}
+        with open('data_dictionnary_test_for_evaluate.json', 'w') as f:
+            json.dump(result, f) """
+        
         return sorted_items

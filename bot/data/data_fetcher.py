@@ -43,9 +43,10 @@ def main():
     websocket_3m.subscribe(stream = list_ticker_kline3m)
     websocket_1h.subscribe(stream = list_ticker_rolling1h)
 
-    time.sleep(7000)
+    time.sleep(85000)
 
     websocket_3m.stop()
     websocket_1h.stop()
 
-main()
+if __name__ == '__main__':
+    main()

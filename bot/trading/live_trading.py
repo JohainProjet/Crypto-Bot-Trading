@@ -37,7 +37,9 @@ class LiveTrading(TradingManager):
 
 
     def stop(self):
+        #Ici appeler portfolio evaluate
         logging.info("unsubscribe user data")
+        self.portfolio.generate_stats_for_storage()
         self.websocketManager.ws_user_data.user_data(self.websocketManager.listenKey, action=SpotWebsocketStreamClient.ACTION_UNSUBSCRIBE)
         self.websocketManager.ws_user_data.stop()
         self.websocketManager.ws_client_kline3m.stop()
@@ -248,7 +250,6 @@ class MessageHandler:
                 logging.debug("OLD STOP LOSS CANCELED")
                 logging.debug(f'Ticker {side} | Stop_loss : {message['P']}')
                 logging.debug('---------------')
-            
             elif message.get('x', None) == 'NEW':
                 if side == 'SELL':
                     logging.debug("NEW STOP LOSS SEND")
@@ -258,16 +259,17 @@ class MessageHandler:
                 logging.debug('---------------')
             
             elif message.get('x', None) == 'TRADE':
+                ticker = message['s']
+                excuted_price = float(message['L'])
                 logging.debug(f'{side} DONE')
                 if side == 'BUY':
                     logging.debug(f"Ticker : {message['s']} | Prix d'achat : {message['L']}")
+                    threading.Thread(target=self.pump_and_dump.define_stop_losses, args = (ticker, excuted_price)).start()
                 elif side == 'SELL':
                     logging.debug(f'Ticker : {message['s']} | USDT en plus : {message['Z']} | Au prix : {message['L']}')
                 logging.debug('---------------')
-                workingTimeOrder = datetime.datetime.fromtimestamp(int(message['E'])/1000) #A corriger peut-être que c'est E et pas T
-                ticker = message['s']
+                workingTimeOrder = datetime.datetime.fromtimestamp(int(message['T'])/1000)
                 executedQty = float(message['l'])
-                excuted_price = float(message['L'])
                 try:
                     print(side, workingTimeOrder, ticker, executedQty, excuted_price)
                     self.pump_and_dump.tradingManager.portfolio.transaction_order(side, 
@@ -276,8 +278,5 @@ class MessageHandler:
                                                                                 executedQty, 
                                                                                 excuted_price)
                 except:
+                    print("error impossible de sell")
                     return
-                if side == 'BUY':
-                    threading.Thread(target=self.pump_and_dump.define_stop_losses, args = (ticker, excuted_price)).start()
-                #elif side == 'SELL': Déjà fait dans transaction _order
-                #    del self.pump_and_dump.tradingManager.portfolio.actifs[message['s']]

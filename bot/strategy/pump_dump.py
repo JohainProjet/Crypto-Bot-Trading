@@ -75,10 +75,14 @@ class PumpDump(Strategy):
                                         ticker,
                                         self.parameters.limits,
                                         self.parameters.crypto_bought)
+        if isinstance(self.tradingManager, LiveTrading):
+            now = datetime.datetime.now()
+        elif isinstance(self.tradingManager, BackTesting):
+            now=datetime.datetime.fromtimestamp(int(data['E'])/1000)
         if pump_detected:
             cash_used = '10'
-            if datetime.datetime.now().minute % 15 == 0:
-                    cash_used = '50'
+            if now.minute % 15 == 0:
+                cash_used = '50'
             self.parameters.crypto_bought.append(ticker)
             try:
                 self.tradingManager.portfolio.check_buy_sell('BUY', ticker, float(cash_used)/close_price, close_price)
@@ -90,8 +94,8 @@ class PumpDump(Strategy):
             #print(f"Variation 3m : {self.pump_dump_instance.dataframe_storage.loc[ticker, ('Variation', '3m')]} | Volume 3m : {self.pump_dump_instance.dataframe_storage.loc[ticker, ('Volume', '3m')]}")
             #print(f"Variation 2h : {self.pump_dump_instance.dataframe_storage.loc[ticker, ('Variation', '2h')]} | Volume 2h : {self.pump_dump_instance.dataframe_storage.loc[ticker, ('Volume', '2h')]}")
 
-        if ticker in self.tradingManager.portfolio.actifs:
-            print(ticker, close_price, self.parameters.ticker_bought_actual_max_price[ticker]['entry_price'])
+        if ticker in self.tradingManager.portfolio.actifs and ticker in self.parameters.ticker_bought_actual_max_price:#Les deux dict doivent être fusionnés
+            #print(ticker, close_price, self.parameters.ticker_bought_actual_max_price[ticker]['entry_price'])
             if close_price > self.parameters.ticker_bought_actual_max_price[ticker]['entry_price']:
 
                 self.parameters.ticker_bought_actual_max_price[ticker]['entry_price'] = close_price
@@ -100,7 +104,7 @@ class PumpDump(Strategy):
 
                 quantity_bought = str(round((self.tradingManager.portfolio.actifs[ticker]['quantity']//stepSize)*stepSize,8))
                 newStopLossPrice = round((self.parameters.stop_loss_price*close_price//tickSize)*tickSize,8)
-                print(ticker, newStopLossPrice)
+                #print(ticker, newStopLossPrice)
                 self.tradingManager.cancel_replace(ticker, quantity_bought, newStopLossPrice)
 
     def update_parameters(self, websocket_stream, data):

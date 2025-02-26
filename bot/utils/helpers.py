@@ -1,22 +1,61 @@
 import datetime
-import pandas as pd
 import time
 import json
+import pandas as pd
 from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
 from dataclasses import dataclass
 from dataclasses import field
 
+def binary_search_get_price(dict_global_time, crypto, timestamp:datetime.datetime):
+    #unix_timestamp = (int(timestamp.timestamp() * 1000))
+    list_values = list(dict_global_time.keys())
+    i, j = 0, len(list_values)-1
+    while i <= j:
+        mid = (i+j)//2
+        if list_values[mid] > timestamp:
+            j = mid - 1
+        elif list_values[mid] < timestamp:
+            i = mid + 1
+        else:
+            i = mid
+            break
+    #i représente l'indice après le timestamp recherché
+    final_time = 0
+    for j in range(i, -1, -1):
+        final_time = list_values[j]
+        for flux in dict_global_time[final_time]:
+            try:
+                if crypto in flux["data"]['s']:
+                    res = {'symbol': crypto, 'price': float(flux['data']['k']['c'])}
+
+                    return res
+            except:
+                continue
+    return 'ERROR'
+
+@dataclass
+class Parameters:
+    limits : dict
+    stop_loss_price : int
+    type_ : str
+    startDate : datetime.datetime = field(default_factory=datetime.datetime.now)
+    endDate : datetime.datetime = field(default_factory=datetime.datetime.now)
+    ticker_bought_actual_max_price : dict = field(default_factory=dict)
+    crypto_bought : list = field(default_factory=list)
+
 
 class Portfolio:
-    def __init__(self, cash : float, actifs : dict = {}):
+    def __init__(self, cash : float, parameters : Parameters, actifs : dict = {}):
         self.creation_date = datetime.datetime.now()
+        self.parameters = parameters
         self.cash = cash
         self.cash_at_start = cash
         self.actifs = actifs
         self.list_prices = []
+        self.portfolio_values = [cash]
         self.asset_value = self.get_assets_value() if self.actifs else 0
         self.df_transaction_history = pd.DataFrame(columns=['Time', 'Type', 'Ticker', 'Quantity', 'Ticker price', 'Cash cost'])
-
+        
     def __str__(self):
         return f'Cash : {self.cash} \n Actifs : {self.actifs} \n Transaction history : {self.df_transaction_history}'
 
@@ -56,8 +95,7 @@ class Portfolio:
         self.actifs[ticker]['quantity']-=quantity
         self.cash += usd_price-fees_operation
         self.add_to_transaction_history('SELL', transaction_time, ticker, quantity, ticker_price)
-        if self.actifs[ticker]['quantity'] == 0:
-            del self.actifs[ticker]
+        del self.actifs[ticker]
 
     @staticmethod
     def calculate_transaction_fees(quantity, ticker_price):
@@ -76,7 +114,6 @@ class Portfolio:
             self.df_transaction_history = pd.DataFrame([transaction])
         else:
             self.df_transaction_history = pd.concat([self.df_transaction_history, pd.DataFrame([transaction])], ignore_index = True)
-        print(self.df_transaction_history)
 
     def save(self, start_date, cash, assets_value):
         with open('results.txt', 'a') as f:
@@ -89,46 +126,72 @@ class Portfolio:
         else:
             self.list_prices = message["result"]
 
-    def fetch_prices(self):
-        try:
-            binance_get_price_api_client = SpotWebsocketAPIClient(on_message=self.message_api)
-            if self.actifs:
-                binance_get_price_api_client.ticker_price(symbols=list(self.actifs.keys()))
-            time.sleep(10)
-            binance_get_price_api_client.stop()
-        except Exception as e:
-            print(f"Prix non récupéré : {e}")
+    def fetch_prices(self, timestamp = None):
+        if self.parameters.type_ in ['PROD', 'TEST']:
+            try:
+                binance_get_price_api_client = SpotWebsocketAPIClient(on_message=self.message_api)
+                if self.actifs:
+                    binance_get_price_api_client.ticker_price(symbols=list(self.actifs.keys()))
+                time.sleep(10)
+                binance_get_price_api_client.stop()
+            except Exception as e:
+                print(f"Prix non récupéré : {e}")
+        else:
+            dict_global_time = self.get_dict_global_times()
+            t1 = time.time()
+            self.list_prices = [binary_search_get_price(dict_global_time, crypto, timestamp) for crypto in self.actifs.keys()]
+            print("temps pour binary search", time.time()-t1)
 
-    def get_assets_value(self):
-        self.fetch_prices()
+    @staticmethod
+    def get_dict_global_times():
+        from bot.trading.backtesting import Datas
+        return Datas.dict_global
+
+    def get_assets_value(self, timestamp = None):
+        self.fetch_prices(timestamp)
         assets_value = 0
         for dict_symbol_price in self.list_prices:
-             assets_value+= self.actifs[dict_symbol_price['symbol']]['quantity'] * float(dict_symbol_price['price'])
+             assets_value += self.actifs[dict_symbol_price['symbol']]['quantity'] * dict_symbol_price['price']
         return assets_value
-    
-    def evaluate_portfolio_value(self, save_to_file = True, verbose = True):
-        cash = self.cash
-        assets_value = self.get_assets_value()
-        portfolio_value = cash+assets_value
+
+    def evaluate_portfolio_value(self, timestamp = None, save_to_file = True, verbose = True):
+        assets_value = self.get_assets_value(timestamp)
+        portfolio_value = self.cash+assets_value
         if verbose:
             print('---------------')
-            print(f'Valeur du cash : {cash}')
+            print(f'Valeur du cash : {self.cash}')
             print(f'Valeur des actifs : {assets_value}')
             print(f'Valeur du Portefeuille : {portfolio_value}')
             print('---------------')
+            self.portfolio_values.append(portfolio_value)
         if save_to_file:
-            self.save(self.creation_date, cash, assets_value)
+            self.save(self.creation_date, self.cash, assets_value)
         return portfolio_value
-    
 
-@dataclass
-class Parameters:
-    limits : dict
-    stop_loss_price : int
-    ticker_bought_actual_max_price : dict = field(default_factory=dict)
-    crypto_bought : list = field(default_factory=list)
+    def generate_stats_for_storage(self, timestamp = None):
+        self.evaluate_portfolio_value(timestamp)
+        portfolio_perf = (self.portfolio_values[-1]/self.cash_at_start - 1)*100
+        if self.parameters.type_ in ['PROD', 'TEST']:
+            startDate = self.creation_date
+            endDate = datetime.datetime.now()
+        elif self.parameters.type_ == 'BACKTEST':
+            startDate = self.parameters.startDate
+            endDate = self.parameters.endDate
 
-
+        nouvelle_ligne = {
+                            "Type": self.parameters.type_,
+                            "StartDate": startDate,
+                            "EndDate": endDate,
+                            "Volume Limit": self.parameters.limits['volume'],
+                            "Variation Limit": self.parameters.limits['variation'],
+                            "NbOfTrades Limit": self.parameters.limits['nbOfTrades'],
+                            "Stop Loss Percentage": self.parameters.stop_loss_price,
+                            "Portfolio Values":self.portfolio_values,
+                            "BTC Perf":'',
+                            "Portfolio Perf": f"{portfolio_perf:.2f}%",
+                        }
+        df_nouvelle = pd.DataFrame([nouvelle_ligne])
+        df_nouvelle.to_csv('Storage_stats.csv', mode='a', index = False, header=False)
 
 def periodic_sleep(total_duration, interval):
     elapsed_time = 0
@@ -139,3 +202,31 @@ def periodic_sleep(total_duration, interval):
 
         remaining_time = total_duration- elapsed_time
         print(f"Temps écoulé : {elapsed_time} secondes. Temps restant : {remaining_time} secondes.")
+
+
+    """     
+    #Define parameters
+    limits = {'volume' : 5,#2
+              'variation' : 5,#2.3
+              'nbOfTrades' : 5}#6 trop haut # 4 encore trop haut même si mieux ? #3
+    stop_loss_price = 0.995 #0.985
+     """
+
+def generate_parameters_combinaison():
+    list_parameters = []
+
+    volumes = [round(1.5 + i, 2) for i in range(3)]
+    variations = [round(1.5 + i, 2) for i in range(3)]
+    nbOfTrades = [2 + i for i in range(4)]
+    stop_loss_prices = [round(0.94 + i * 0.02, 2) for i in range(3)]
+    for stop_price in stop_loss_prices:
+        for volume in volumes:
+            for variation in variations:
+                for nbOfTrade in nbOfTrades:
+                    limits = {'volume' : volume,
+                            'variation' : variation,
+                            'nbOfTrades' : nbOfTrade}
+                    list_parameters.append((limits, stop_price))
+    return list_parameters
+if __name__ == '__main__':
+    generate_parameters_combinaison()
