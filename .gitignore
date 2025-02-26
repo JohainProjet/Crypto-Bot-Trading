@@ -1,1 +1,10 @@
 __pycache__/
+Storage_stats.xlsx
+src/strategy/strat2/tests.py
+venv
+src/spot_keys.txt
+src/spot_test_keys.txt
+test.txt
+Transaction History.xlsx
+config.py
+historical_datas
