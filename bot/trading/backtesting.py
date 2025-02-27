@@ -99,7 +99,7 @@ class BackTesting(TradingManager):
 
 class Datas:
     dict_global = {}
-    path_ = r'C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading\bot\data\historical_datas'
+    path_ = r'bot\data\historical_datas'
     path_files_klines = []
     path_files_rolling = []
     def __init__(self, listTickers, startDate, endDate, strategy = None):

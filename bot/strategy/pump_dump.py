@@ -26,7 +26,7 @@ class PumpDump(Strategy):
 
     @staticmethod
     def getTickerPairs():
-        with open(r"C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading\bot\data\list_all_pairs.txt", 'r') as f:
+        with open(r"bot\data\list_all_pairs.txt", 'r') as f:
             listTickers = f.read().splitlines()
         return listTickers
 

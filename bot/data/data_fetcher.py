@@ -5,11 +5,11 @@ from binance.websocket.spot.websocket_stream import SpotWebsocketStreamClient
 
 
 def get_tickers():
-    with open(r"C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading\bot\data\list_all_pairs.txt", 'r') as f:
+    with open(r"bot\data\list_all_pairs.txt", 'r') as f:
         listTickers = f.read().splitlines()
     return listTickers
 
-path = r'C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading\bot\data\historical_datas'
+path = r'bot\data\historical_datas'
 def messageProcessingkline3m(_, source):
     message = json.loads(source)
     if message.get('result',0) == None:

@@ -171,7 +171,7 @@ class MessageHandler:
 
     @staticmethod
     def save_datas(message):
-        path = r'C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading\bot\data\historical_datas'
+        path = r'bot\data\historical_datas'
         if 'kline' in message['stream']:
             with open(os.path.join(path, 'kline3m', message['data']['s'] + '.txt'), 'a') as f:
                 f.write(json.dumps(message)+ '\n')
