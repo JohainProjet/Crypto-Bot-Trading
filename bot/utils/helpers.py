@@ -151,7 +151,10 @@ class Portfolio:
         self.fetch_prices(timestamp)
         assets_value = 0
         for dict_symbol_price in self.list_prices:
-             assets_value += self.actifs[dict_symbol_price['symbol']]['quantity'] * dict_symbol_price['price']
+            try:#TO MODIFY (self.list_prices, self.actifs needs to be merge maybe)
+                assets_value += self.actifs[dict_symbol_price['symbol']]['quantity'] * float(dict_symbol_price['price'])
+            except KeyError:
+                assets_value += 0
         return assets_value
 
     def evaluate_portfolio_value(self, timestamp = None, save_to_file = True, verbose = True):
@@ -215,10 +218,10 @@ def periodic_sleep(total_duration, interval):
 def generate_parameters_combinaison():
     list_parameters = []
 
-    volumes = [round(1.5 + i, 2) for i in range(3)]
+    volumes = [round(1.5 + i, 2) for i in range(0,3)]
     variations = [round(1.5 + i, 2) for i in range(3)]
     nbOfTrades = [2 + i for i in range(4)]
-    stop_loss_prices = [round(0.94 + i * 0.02, 2) for i in range(3)]
+    stop_loss_prices = [round(0.94 + i * 0.02, 2) for i in range(1,3)]
     for stop_price in stop_loss_prices:
         for volume in volumes:
             for variation in variations:

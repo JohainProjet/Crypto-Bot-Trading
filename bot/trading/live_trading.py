@@ -9,7 +9,6 @@ from binance.spot import Spot as Client
 from bot.trading.base_trading import TradingManager
 from binance.websocket.spot.websocket_stream import SpotWebsocketStreamClient
 from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
-from binance.spot import Spot as Client
 from bot.strategy.base_strategy import Strategy
 
 class LiveTrading(TradingManager):
@@ -68,7 +67,7 @@ class LiveTrading(TradingManager):
         time.sleep(15)
         client.stop()
 
-    def buy(self, ticker, cash_used, excuted_price=0, time=0):
+    def buy(self, ticker, cash_used, executed_price=0, time=0):
         return self.websocketManager.ws_api_client.new_order(symbol=ticker,
                                                             side="BUY",
                                                             type="MARKET",
@@ -78,15 +77,14 @@ class LiveTrading(TradingManager):
 
     def cancel_replace(self, ticker, quantity_bought, newStopLossPrice):
         self.websocketManager.ws_api_client.cancel_replace_order(ticker,
-                                                                    side='SELL',
-                                                                    cancelReplaceMode="ALLOW_FAILURE",
-                                                                    cancelOrigClientOrderId = f'stop_loss_{ticker}',
-                                                                    newClientOrderId=f"stop_loss_{ticker}",
-                                                                    type="STOP_LOSS",
-                                                                    quantity=quantity_bought,
-                                                                    stopPrice=newStopLossPrice,
-                                                                    newOrderRespType="FULL")
-
+                                                                side='SELL',
+                                                                cancelReplaceMode="ALLOW_FAILURE",
+                                                                cancelOrigClientOrderId = f'stop_loss_{ticker}',
+                                                                newClientOrderId=f"stop_loss_{ticker}",
+                                                                type="STOP_LOSS",
+                                                                quantity=quantity_bought,
+                                                                stopPrice=newStopLossPrice,
+                                                                newOrderRespType="FULL")
 
 
 class WebsocketManager:
@@ -105,14 +103,14 @@ class WebsocketManager:
     def createClient(self):
         if self.isTestMode == 'TEST':
             base_url_client = "https://testnet.binance.vision"
-        elif self.isTestMode == 'PROD' or self.isTestMode == 'BACKTEST':
+        elif self.isTestMode in ['PROD', 'BACKTEST']:
             base_url_client = 'https://api.binance.com'
         return Client(self.api_key, base_url=base_url_client)
 
     def createWebsocketAPI(self):
         if self.isTestMode == 'TEST':
             stream_url = "wss://ws-api.testnet.binance.vision/ws-api/v3"
-        elif self.isTestMode == 'PROD' or self.isTestMode == 'BACKTEST':
+        elif self.isTestMode in ['PROD', 'BACKTEST']:
             stream_url = "wss://ws-api.binance.com:443/ws-api/v3"
         return SpotWebsocketAPIClient(stream_url=stream_url,
                                         api_key=self.api_key,
@@ -139,7 +137,6 @@ class WebsocketManager:
             stream_url = "wss://stream.binance.com:9443" 
             return SpotWebsocketStreamClient(stream_url=stream_url, on_message=self.message_handler.messageProcessingkline3m, is_combined=True)
         elif on_message_stream_name == 'rolling1h':
-            #Si on utilise "wss://stream.testnet.binance.vision", on va récupérer les données du test net qui sont très peu représentatatives du marché
             stream_url = "wss://stream.binance.com:9443"
             return SpotWebsocketStreamClient(stream_url=stream_url, on_message=self.message_handler.messageProcessingRolling1h, is_combined=True)
         else:
@@ -193,16 +190,6 @@ class MessageHandler:
             list_crypto.append(crypto['symbol'])
         if list_crypto:
             self.pump_and_dump.tradingManager.websocketManager.ws_api_client.cancel_open_orders(symbol=list_crypto)
-
-    """ def message_handler_open_orders(self, _, source):
-        list_crypto = []
-        message = json.loads(source)
-        result = message['result']
-        for crypto in result:
-            list_crypto.append(crypto['symbol'])
-        print(list_crypto)
-        for crypto in list_crypto:
-            self.pump_and_dump.tradingManager.websocketManager.client.cancel_open_orders(symbol=crypto) """
     
     def message_handler_orders(self, _, source):
         message : dict = json.loads(source)
@@ -227,7 +214,7 @@ class MessageHandler:
             workingTimeOrder = datetime.datetime.fromtimestamp(int(result['workingTime'])/1000)
             side = result['side']
             fills = result['fills'][0]
-            excuted_price = float(fills['price'])
+            executed_price = float(fills['price'])
             ticker = result['symbol']
             commission = float(fills['commission'])
             commissionAsset = fills['commissionAsset']
@@ -248,35 +235,35 @@ class MessageHandler:
             side = message['S']
             if message.get('x', None) == 'CANCELED' and side == 'SELL':
                 logging.debug("OLD STOP LOSS CANCELED")
-                logging.debug(f'Ticker {side} | Stop_loss : {message['P']}')
+                logging.debug(f"Ticker {side} | Stop_loss : {message['P']}")
                 logging.debug('---------------')
             elif message.get('x', None) == 'NEW':
                 if side == 'SELL':
                     logging.debug("NEW STOP LOSS SEND")
                 elif side == 'BUY':
                     logging.debug("NEW BUY ORDER SEND")
-                logging.debug(f'Ticker {message['s']} | Stop_loss : {message['P']}')
+                logging.debug(f"Ticker {message['s']} | Stop_loss : {message['P']}")
                 logging.debug('---------------')
             
             elif message.get('x', None) == 'TRADE':
                 ticker = message['s']
-                excuted_price = float(message['L'])
+                executed_price = float(message['L'])
                 logging.debug(f'{side} DONE')
                 if side == 'BUY':
                     logging.debug(f"Ticker : {message['s']} | Prix d'achat : {message['L']}")
-                    threading.Thread(target=self.pump_and_dump.define_stop_losses, args = (ticker, excuted_price)).start()
+                    threading.Thread(target=self.pump_and_dump.define_stop_losses, args = (ticker, executed_price)).start()
                 elif side == 'SELL':
-                    logging.debug(f'Ticker : {message['s']} | USDT en plus : {message['Z']} | Au prix : {message['L']}')
+                    logging.debug(f"Ticker : {message['s']} | USDT en plus : {message['Z']} | Au prix : {message['L']}")
                 logging.debug('---------------')
                 workingTimeOrder = datetime.datetime.fromtimestamp(int(message['T'])/1000)
                 executedQty = float(message['l'])
                 try:
-                    print(side, workingTimeOrder, ticker, executedQty, excuted_price)
+                    print(side, workingTimeOrder, ticker, executedQty, executed_price)
                     self.pump_and_dump.tradingManager.portfolio.transaction_order(side, 
                                                                                 workingTimeOrder, 
                                                                                 ticker,
                                                                                 executedQty, 
-                                                                                excuted_price)
+                                                                                executed_price)
                 except:
                     print("error impossible de sell")
                     return

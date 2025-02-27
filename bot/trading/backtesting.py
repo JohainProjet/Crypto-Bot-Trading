@@ -39,7 +39,7 @@ class BackTesting(TradingManager):
         self.datas.strategy.update_parameters('3m', data['k'])
         if data['s'] in self.orders:
             self.check_stop_losses(data)
-        
+
     def start(self):
         print(len(self.datas.dict_time))
         for time_, list_events in self.datas.dict_time.items():
@@ -48,7 +48,7 @@ class BackTesting(TradingManager):
                     self.messageProcessingkline3mBackTesting(event)
                 elif 'ticker' in event['stream']:
                     self.messageProcessingRolling1hBackTesting(event)
-        self.portfolio.generate_stats_for_storage(time_)
+        self.portfolio.generate_stats_for_storage(time_)#time_ hors de la boucle for BIZARRE ERREUR POSSIBLE ? ??? #self.portfolio.generate_stats_for_storage(self.datas.dict_time.keys()[-1])
         self.stop()
         return
 

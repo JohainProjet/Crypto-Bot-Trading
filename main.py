@@ -12,15 +12,16 @@ config_logging(logging, logging.INFO)
 def main(parameters_local):
     startDate = datetime.datetime(2025, 2, 22, 0, 0,0)
     endDate = datetime.datetime(2025, 2, 23, 0, 0, 0)
-    PROGRAM_MODE = 'BACKTEST' #TEST/BACKTEST/PROD
+    PROGRAM_MODE = 'PROD' #TEST/BACKTEST/PROD
     limits = parameters_local[0]
     stop_loss_price = parameters_local[1]
     t1 = time.time()
-    with open("trades.txt", "a") as f:
-        json.dump(limits, f)
-        f.write('\t')
-        f.write(str(stop_loss_price))
-        f.write("\n")
+    if PROGRAM_MODE == 'BACKTEST':
+        with open("trades.txt", "a") as f:
+            json.dump(limits, f)
+            f.write('\t')
+            f.write(str(stop_loss_price))
+            f.write("\n")
     parameters = Parameters(limits, stop_loss_price, PROGRAM_MODE, startDate, endDate)
 
     portfolio = Portfolio(500, parameters, {})
@@ -38,10 +39,11 @@ def main(parameters_local):
         strategy.tradingManager.get_open_orders_and_cancel()
 
     strategy.tradingManager.start()
-    with open("trades.txt", "a") as f:
-        f.write(f'Durée {time.time()- t1}.\n')
-        f.write("------------------------------------------------------------------\n")
-        f.write("\n")
+    if PROGRAM_MODE == 'BACKTEST':
+        with open("trades.txt", "a") as f:
+            f.write(f'Durée {time.time()- t1}.\n')
+            f.write("------------------------------------------------------------------\n")
+            f.write("\n")
 
 if __name__ == '__main__':
     #Define parameters
@@ -50,5 +52,9 @@ if __name__ == '__main__':
               'nbOfTrades' : 5}#6 trop haut # 4 encore trop haut même si mieux ? #3
     stop_loss_price = 0.995 #0.985 """
     list_parameters = generate_parameters_combinaison()
+    limits = {'volume' : 2.5,
+        'variation' : 2.5,
+        'nbOfTrades' : 3}
+    list_parameters = [(limits, 0.96)]
     for parameters_local in list_parameters:
         main(parameters_local)

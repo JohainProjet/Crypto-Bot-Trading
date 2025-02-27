@@ -37,7 +37,7 @@ class PumpDump(Strategy):
                                                                 'tickSize' : tickSize}
         stopLossPrice = round((self.parameters.stop_loss_price*entry_price//tickSize)*tickSize,8)
         quantity_bought = str(round((self.tradingManager.portfolio.actifs[ticker]['quantity']//stepSize)*stepSize,8))
-        #logging.debug("Entry_price : ", entry_price, "StopPrice : ", stopLossPrice)
+        print("Entry_price : ", entry_price, "StopPrice : ", stopLossPrice)
         self.tradingManager.place_stop_loss(ticker, quantity_bought, stopLossPrice)
 
     @staticmethod
@@ -82,7 +82,7 @@ class PumpDump(Strategy):
         if pump_detected:
             cash_used = '10'
             if now.minute % 15 == 0:
-                cash_used = '50'
+                cash_used = '30'
             self.parameters.crypto_bought.append(ticker)
             try:
                 self.tradingManager.portfolio.check_buy_sell('BUY', ticker, float(cash_used)/close_price, close_price)
