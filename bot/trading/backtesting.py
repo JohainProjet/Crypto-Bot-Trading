@@ -7,18 +7,17 @@ from binance.spot import Spot as Client
 from bot.trading.base_trading import TradingManager
 from bot.strategy.base_strategy import Strategy
 
-
 class BackTesting(TradingManager):
-    def __init__(self, isTestMode, portfolio, duration_time, list_tickers, start_date, end_date):
-        super().__init__(isTestMode,  portfolio, duration_time)
+    def __init__(self, parameters, portfolio, list_tickers, simulation_saver):
+        super().__init__(parameters,  portfolio, simulation_saver)
         self.list_tickers = list_tickers
-        self.datas = Datas(list_tickers, start_date, end_date)
+        self.datas = Datas(list_tickers, parameters.start_date, parameters.end_date)
         self.orders = {}
 
     def set_pump_and_dump(self, pump_and_dump):
         self.pump_and_dump = pump_and_dump
 
-    def message_processing_rolling_1h_back_testing(self, message):
+    def message_processing_rolling_back_testing(self, message):
         if message.get('result',0) is None:
             print(f'Connection open at {datetime.datetime.now()} with rolling windows 1hour.')
             return None
@@ -32,12 +31,12 @@ class BackTesting(TradingManager):
             if elem['symbol'] == ticker:
                 return float(elem['filters'][1]['stepSize']), float(elem['filters'][0]['tickSize'])
         return None
-    def message_processing_kline_3m_back_testing(self, message):
+    def message_processing_kline_back_testing(self, message):
         if message.get('result',0) is None:
             print(f'Connection open at {datetime.datetime.now()} with websocket kline 3minutes.')
             return None
         data = message['data']
-        self.datas.strategy.update_parameters('3m', data['k'])
+        self.datas.strategy.update_parameters(self.parameters.kline_type, data['k'])
         self.datas.strategy.take_decision(data)
         if data['s'] in self.orders:
             self.check_stop_losses(data)
@@ -45,15 +44,21 @@ class BackTesting(TradingManager):
 
     def start(self):
         print(len(self.datas.dict_time))
-        for list_events in self.datas.dict_time:
+        assert len(self.datas.dict_time.keys()) > 0, "empty event list, input dates can be wrong"
+
+        time_reference = list(self.datas.dict_time.keys())[0]
+        for current_time, list_events in self.datas.dict_time.items():
+            if current_time - time_reference >= datetime.timedelta(minutes=5):
+                self.screenshot(current_time)
+                time_reference = current_time
             for event in list_events:
                 if 'kline' in event['stream']:
-                    self.message_processing_kline_3m_back_testing(event)
+                    self.message_processing_kline_back_testing(event)
                 elif 'ticker' in event['stream']:
-                    self.message_processing_rolling_1h_back_testing(event)
-        assert len(self.datas.dict_time.keys()) > 0, "empty event list, input dates can be wrong"
+                    self.message_processing_rolling_back_testing(event)
+
         last_time = list(self.datas.dict_time.keys())[-1]
-        self.portfolio.generate_stats_for_storage(last_time)
+        self.portfolio.evaluate_portfolio_value(last_time)
         self.stop()
 
     def stop(self):
@@ -66,7 +71,7 @@ class BackTesting(TradingManager):
         executed_qty = cash_used/excecuted_price
         step_size = self.get_ticker_tick_size(ticker)[0]
         executed_qty = round((executed_qty//step_size)*step_size,8)
-        working_time_order = datetime.datetime.fromtimestamp(int(time)/1000)
+        working_time_order = datetime.datetime.fromtimestamp(int(time_)/1000)
         self.portfolio.transaction_order('BUY',
                                         working_time_order,
                                         ticker,
@@ -112,7 +117,7 @@ class Datas:
         self.end_date = end_date
         if not Datas.path_files_klines:
             Datas.path_files_klines = [os.path.join(Datas.path_,
-                                                    'kline1m',
+                                                    'kline3m',
                                                     f'{ticker}.txt') for ticker in list_tickers]
         if not Datas.path_files_rolling:
             Datas.path_files_rolling = [os.path.join(Datas.path_,

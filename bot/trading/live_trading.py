@@ -9,13 +9,13 @@ from typing import List
 from binance.spot import Spot as Client
 from binance.websocket.spot.websocket_stream import SpotWebsocketStreamClient
 from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
-from bot.trading.base_trading import TradingManager
+from bot.trading.base_trading import TradingManager, SimulationSaver
 from bot.strategy.base_strategy import Strategy
 
 class LiveTrading(TradingManager):
-    def __init__(self, is_test_mode, portfolio, duration_time, list_tickers):
-        super().__init__(is_test_mode, portfolio, duration_time)
-        self.websocket_manager = WebsocketManager(is_test_mode, self.api_key, self.api_secret)
+    def __init__(self, parameters, portfolio, list_tickers, simulation_saver : SimulationSaver):
+        super().__init__(parameters, portfolio, simulation_saver)
+        self.websocket_manager = WebsocketManager(parameters.program_type, self.api_key, self.api_secret)
         self.list_tickers : List[str] = list_tickers
 
     def get_ticker_tick_size(self, ticker):
@@ -33,14 +33,14 @@ class LiveTrading(TradingManager):
         self.websocket_manager.ws_client_rolling_1h.subscribe(stream = list_ticker_rolling1h)
 
         logging.info('start sleep')
-        self.periodic_sleep(self.duration_time, 300)
+        self.periodic_sleep(self.parameters.duration_time, 300)
         self.stop()
 
 
     def stop(self):
         #Ici appeler portfolio evaluate
         logging.info("unsubscribe user data")
-        self.portfolio.generate_stats_for_storage()
+        self.portfolio.evaluate_portfolio_value()
         self.websocket_manager.ws_user_data.user_data(
             self.websocket_manager.listen_key,
             action=SpotWebsocketStreamClient.ACTION_UNSUBSCRIBE
@@ -60,9 +60,9 @@ class LiveTrading(TradingManager):
 
     def get_open_orders_and_cancel(self):
         stream_url = None
-        if self.is_test_mode == 'TEST':
+        if self.parameters.program_type == 'TEST':
             stream_url="wss://ws-api.testnet.binance.vision/ws-api/v3"
-        elif self.is_test_mode == 'PROD':
+        elif self.parameters.program_type == 'PROD':
             stream_url = "wss://ws-api.binance.com:443/ws-api/v3"
 
         client = SpotWebsocketAPIClient(
@@ -98,8 +98,8 @@ class LiveTrading(TradingManager):
 
 
 class WebsocketManager:
-    def __init__(self, is_test_mode : str, api_key, api_secret):
-        self.is_test_mode = is_test_mode
+    def __init__(self, program_type : str, api_key, api_secret):
+        self.program_type = program_type
         self.api_key = api_key
         self.api_secret = api_secret
         self.message_handler : MessageHandler = MessageHandler(None)
@@ -112,17 +112,17 @@ class WebsocketManager:
 
     def create_client(self):
         base_url_client = None
-        if self.is_test_mode == 'TEST':
+        if self.program_type == 'TEST':
             base_url_client = "https://testnet.binance.vision"
-        elif self.is_test_mode in ['PROD', 'BACKTEST']:
+        elif self.program_type in ['PROD', 'BACKTEST']:
             base_url_client = 'https://api.binance.com'
         return Client(self.api_key, base_url=base_url_client)
 
     def create_websocket_api(self):
         stream_url = None
-        if self.is_test_mode == 'TEST':
+        if self.program_type == 'TEST':
             stream_url = "wss://ws-api.testnet.binance.vision/ws-api/v3"
-        elif self.is_test_mode in ['PROD', 'BACKTEST']:
+        elif self.program_type in ['PROD', 'BACKTEST']:
             stream_url = "wss://ws-api.binance.com:443/ws-api/v3"
         return SpotWebsocketAPIClient(stream_url=stream_url,
                                         api_key=self.api_key,
@@ -135,7 +135,7 @@ class WebsocketManager:
         return listen_key
 
     def create_websocket_stream(self, on_message_stream_name : str):
-        if self.is_test_mode == 'TEST':
+        if self.program_type == 'TEST':
             stream_url = "wss://stream.testnet.binance.vision"
         else:
             stream_url = "wss://stream.binance.com:9443"
@@ -153,14 +153,14 @@ class WebsocketManager:
             stream_url = "wss://stream.binance.com:9443"
             return SpotWebsocketStreamClient(
                 stream_url=stream_url,
-                on_message=self.message_handler.message_processing_kline_3m,
+                on_message=self.message_handler.message_processing_kline,
                 is_combined=True
             )
         if on_message_stream_name == 'rolling1h':
             stream_url = "wss://stream.binance.com:9443"
             return SpotWebsocketStreamClient(
                 stream_url=stream_url,
-                on_message=self.message_handler.message_processing_rolling_1h,
+                on_message=self.message_handler.message_processing_rolling,
                 is_combined=True
             )
         raise ValueError('Wrong parameter')
@@ -173,22 +173,21 @@ class MessageHandler:
     def set_strategy(self, pump_and_dump : Strategy):
         self.pump_and_dump = pump_and_dump
 
-    def message_processing_rolling_1h(self, _, source):
+    def message_processing_rolling(self, _, source):
         message : dict = json.loads(source)
 
         if message.get('result',0) is None:
             print(f'Connection open at {datetime.datetime.now()} with rolling windows 1hour.')
             return
-
         self.pump_and_dump.update_parameters('1h', message['data'])
         self.save_datas(message)
 
-    def message_processing_kline_3m(self, _, source):
+    def message_processing_kline(self, _, source):
         message : dict = json.loads(source)
         if message.get('result',0) is None:
             print(f'Connection open at {datetime.datetime.now()} with websocket kline 3minutes.')
             return None
-        self.pump_and_dump.update_parameters('3m', message['data']['k'])
+        self.pump_and_dump.update_parameters(self.pump_and_dump.parameters.kline_type, message['data']['k'])
         self.pump_and_dump.take_decision(message['data'])
         self.save_datas(message)
         return None
@@ -198,8 +197,8 @@ class MessageHandler:
         path = r'bot\data\historical_datas'
         if 'kline' in message['stream']:
             with open(
-                os.path.join(path, 'kline3m', message['data']['s'] + '.txt'),
-                'a', 
+                os.path.join(path, 'kline1m', message['data']['s'] + '.txt'),
+                'a',
                 encoding= 'utf-8'
             ) as f:
                 f.write(json.dumps(message)+ '\n')
