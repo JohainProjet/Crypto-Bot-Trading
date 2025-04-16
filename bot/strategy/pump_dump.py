@@ -1,121 +1,206 @@
 import datetime
-import pandas as pd
+import numpy as np
+from collections import defaultdict
 from bot.utils.helpers import Portfolio, Parameters
 from bot.strategy.base_strategy import Strategy
+from bot.trading.base_trading import SimulationSaver
 from bot.trading.backtesting import BackTesting
 from bot.trading.live_trading import LiveTrading
 
 
 class PumpDump(Strategy):
-    def __init__(self, parameters : Parameters,  portfolio : Portfolio, durationTime : int, isTestMode : str, startDate, endDate):
-        if durationTime <= 0:
+
+    COLUMN_MAPPING = {
+        ("Variation", "1m"): 0, ("Variation", "1h"): 1,
+        ("Volume", "1m"): 2, ("Volume", "1h"): 3,
+        ("NbOfTrades", "1m"): 4, ("NbOfTrades", "1h"): 5,
+        ("Price is going up", ""): 6
+    }
+
+    def __init__(self, parameters : Parameters, portfolio : Portfolio, simulation_saver : SimulationSaver):
+        if parameters.duration_time <= 0:
             raise ValueError("durationTime must be positive.")
-        if not isinstance(isTestMode, str):
+        if not isinstance(parameters.program_type, str):
             raise TypeError("isTestMode must be a string.")
-        super().__init__(durationTime, isTestMode)
-
-        self.tickersPairs = self.getTickerPairs()
+        super().__init__(parameters.duration_time)
         self.parameters = parameters
-        self.dataframe_storage = self.create_dataframe_for_storage()
-        self.startDate = startDate
-        self.endDate = endDate
-        if isTestMode in ['TEST', 'PROD']:
-            self.tradingManager = LiveTrading(isTestMode, portfolio, durationTime, self.tickersPairs)
-        else:
-            self.tradingManager = BackTesting(isTestMode, portfolio, durationTime, self.tickersPairs, startDate, endDate)
+        self.portfolio = portfolio
+        self.tickers_pairs = parameters.list_tickers
+        self.data_storage = self.create_dataframe_for_storage()
+        self.ticker_mapping = {}
+        self.next_free_index = 0
+        self.prices = defaultdict(list)
+        self.max_z_score = {}
+        self.z_score_hits = False
 
-    @staticmethod
-    def getTickerPairs():
-        with open(r"C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading\bot\data\list_all_pairs.txt", 'r') as f:
-            listTickers = f.read().splitlines()
-        return listTickers
+        self.start_date = parameters.start_date
+        self.end_date = parameters.end_date
+        if parameters.program_type in ['TEST', 'PROD']:
+            self.trading_manager = LiveTrading(
+                parameters,
+                portfolio,
+                self.tickers_pairs,
+                simulation_saver
+            )
+        else:
+            self.trading_manager = BackTesting(
+                parameters,
+                portfolio,
+                self.tickers_pairs,
+                simulation_saver)
 
     def define_stop_losses(self, ticker, entry_price):
-        stepSize, tickSize = self.tradingManager.getTickerTickSize(ticker)
+        step_size, tick_size = self.trading_manager.get_ticker_tick_size(ticker)
         self.parameters.ticker_bought_actual_max_price[ticker] = {'entry_price' : entry_price,
-                                                                'stepSize' : stepSize,
-                                                                'tickSize' : tickSize}
-        stopLossPrice = round((self.parameters.stop_loss_price*entry_price//tickSize)*tickSize,8)
-        quantity_bought = str(round((self.tradingManager.portfolio.actifs[ticker]['quantity']//stepSize)*stepSize,8))
-        #logging.debug("Entry_price : ", entry_price, "StopPrice : ", stopLossPrice)
-        self.tradingManager.place_stop_loss(ticker, quantity_bought, stopLossPrice)
+                                                                'stepSize' : step_size,
+                                                                'tickSize' : tick_size}
+        scaled_price = self.parameters.stop_loss_prct * entry_price
+        price_step = scaled_price // tick_size
+        stop_loss_price = round(price_step*tick_size,8)
+        quantity = self.trading_manager.portfolio.actifs[ticker]['quantity']
+        quantity_step = quantity//step_size
+        quantity_bought = str(round(quantity_step*step_size,8))
+        print('quantity_bought calculate', quantity_bought)
+        print("quantity in portfolio", self.portfolio.actifs[ticker]['quantity'])
+        print("Entry_price : ", entry_price, "StopPrice : ", stop_loss_price)
+        self.trading_manager.place_stop_loss(ticker, quantity_bought, stop_loss_price)
 
     @staticmethod
     def create_dataframe_for_storage():
-        multi_columns = pd.MultiIndex.from_tuples([('Variation', '3m'), ('Variation', '1h'),
-                                            ('Volume', '3m'), ('Volume', '1h'), ('NbOfTrades', '3m'),
-                                            ('NbOfTrades', '1h'), ('Price is going up', None)])
-        dataframe_storage = pd.DataFrame(columns = multi_columns)
-        return dataframe_storage
+        return np.full((300, len(PumpDump.COLUMN_MAPPING)), np.inf, dtype=np.float32)
 
-    def detect_pump(self, dataframe_storage, ticker, limits, crypto_bought):
-        if ticker in crypto_bought:
+    def get_ticker_index(self, ticker):
+        if ticker not in self.ticker_mapping:
+            if self.next_free_index >= 300:
+                raise ValueError("Plus de place disponible dans le tableau")
+
+            self.ticker_mapping[ticker] = self.next_free_index
+            self.next_free_index += 1
+
+        return self.ticker_mapping[ticker]
+
+    def detect_pump(self, ticker):
+        if ticker in self.parameters.crypto_bought:
             return False
-        variation_condition = (limits['variation']*dataframe_storage.loc[ticker,('Variation', '3m')] > 
-                                dataframe_storage.loc[ticker,('Variation', '1h')])
+        row_idx = self.get_ticker_index(ticker)
+        variation_3m = self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("Variation", self.parameters.kline_type)]]
+        variation_1h = self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("Variation", "1h")]]
 
-        volume_condition = (limits['volume']*dataframe_storage.loc[ticker,('Volume', '3m')] > 
-                            dataframe_storage.loc[ticker,('Volume', '1h')])
-        nb_of_trades_condition = (limits['nbOfTrades']*dataframe_storage.loc[ticker,('NbOfTrades', '3m')] > 
-                                dataframe_storage.loc[ticker,('NbOfTrades', '1h')])
-        price_is_going_up_condition = dataframe_storage.loc[ticker, ('Price is going up', '')]
-        return variation_condition and volume_condition and price_is_going_up_condition and nb_of_trades_condition
+        if self.parameters.limits['variation']*variation_3m <= variation_1h:
+            return False
+
+        volume_3m = self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("Volume", self.parameters.kline_type)]]
+        volume_1h = self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("Volume", "1h")]]
+
+        #print("Volume", volume_3m, volume_1h)
+
+        if self.parameters.limits['volume']*volume_3m <= volume_1h:
+            return False
+
+        nb_of_trades_3m = self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("NbOfTrades", self.parameters.kline_type)]]
+        nb_of_trades_1h = self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("NbOfTrades", "1h")]]
+
+        print("NbOftrades", nb_of_trades_3m, nb_of_trades_1h)
+
+        if self.parameters.limits['nbOfTrades']*nb_of_trades_3m <= nb_of_trades_1h:
+            return False
+
+        price_is_going_up = self.data_storage[
+            row_idx, PumpDump.COLUMN_MAPPING[("Price is going up", "")]
+        ]
+
+        print('Price is going up', price_is_going_up)
+
+        if not price_is_going_up:
+            return False
+        if price_is_going_up == np.float32('inf'):
+            return False
+
+        return True
 
     def take_decision(self, data):
         k = data['k']
-        ticker = k['s']
-        variation = float(k['h']) - float(k['l'])
-        volume = float(k['v'])
+        ticker = k['s'][:-4]+'USDC'
         close_price = float(k['c'])
-        price_is_going_up = bool(close_price > float(k['o']))
-        self.dataframe_storage.loc[ticker, ('Variation', '3m')] = variation
-        self.dataframe_storage.loc[ticker, ('Volume', '3m')] = volume
-        self.dataframe_storage.loc[ticker, ('Price is going up', '')] = price_is_going_up
-        pump_detected = self.detect_pump(self.dataframe_storage,
-                                        ticker,
-                                        self.parameters.limits,
-                                        self.parameters.crypto_bought)
-        if isinstance(self.tradingManager, LiveTrading):
-            now = datetime.datetime.now()
-        elif isinstance(self.tradingManager, BackTesting):
-            now=datetime.datetime.fromtimestamp(int(data['E'])/1000)
+        pump_detected = self.detect_pump(ticker)
+        #if isinstance(self.tradingManager, LiveTrading):
+        #    now = datetime.datetime.now()
+        #elif isinstance(self.tradingManager, BackTesting):
+        now = datetime.datetime.fromtimestamp(int(data['E'])/1000)
         if pump_detected:
             cash_used = '10'
             if now.minute % 15 == 0:
-                cash_used = '50'
-            self.parameters.crypto_bought.append(ticker)
+                cash_used = '30'
             try:
-                self.tradingManager.portfolio.check_buy_sell('BUY', ticker, float(cash_used)/close_price, close_price)
-                self.tradingManager.buy(ticker, float(cash_used), close_price, data['E'])
+                self.trading_manager.portfolio.check_buy_sell(
+                    'BUY',
+                    ticker,
+                    float(cash_used)/close_price, close_price
+                )
+                self.trading_manager.buy(ticker, float(cash_used), close_price, data['E'])
             except AssertionError:
                 print(f'Order to buy {ticker} was not send, not enough cash on portfolio.')
+            self.parameters.crypto_bought.append(ticker)
 
-            #print(f'TICKER : {ticker}')
-            #print(f"Variation 3m : {self.pump_dump_instance.dataframe_storage.loc[ticker, ('Variation', '3m')]} | Volume 3m : {self.pump_dump_instance.dataframe_storage.loc[ticker, ('Volume', '3m')]}")
-            #print(f"Variation 2h : {self.pump_dump_instance.dataframe_storage.loc[ticker, ('Variation', '2h')]} | Volume 2h : {self.pump_dump_instance.dataframe_storage.loc[ticker, ('Volume', '2h')]}")
+        #Les deux dict doivent être fusionnés
+        if (ticker in self.trading_manager.portfolio.actifs and
+            ticker in self.parameters.ticker_bought_actual_max_price):
+            #print(ticker, close_price,
+            # self.parameters.ticker_bought_actual_max_price[ticker]['entry_price'])
+            mean_window_size = self.parameters.mean_rolling_size
+            std_window_size = self.parameters.std_rolling_size
 
-        if ticker in self.tradingManager.portfolio.actifs and ticker in self.parameters.ticker_bought_actual_max_price:#Les deux dict doivent être fusionnés
-            #print(ticker, close_price, self.parameters.ticker_bought_actual_max_price[ticker]['entry_price'])
-            if close_price > self.parameters.ticker_bought_actual_max_price[ticker]['entry_price']:
+            current_z_score = (close_price - np.mean(self.prices[ticker][-mean_window_size:])) / np.std(self.prices[ticker][-std_window_size:])
+            max_z_score = self.max_z_score.get(ticker, 0)
 
+            self.max_z_score[ticker] = max(max_z_score, current_z_score)
+            threshold = 1
+            print(ticker, current_z_score, close_price, np.mean(self.prices[ticker][-mean_window_size:]), np.std(self.prices[ticker][-std_window_size:]))
+            if close_price > self.parameters.ticker_bought_actual_max_price[ticker]['entry_price'] and not self.z_score_hits:
                 self.parameters.ticker_bought_actual_max_price[ticker]['entry_price'] = close_price
-                stepSize = self.parameters.ticker_bought_actual_max_price[ticker]['stepSize']
-                tickSize = self.parameters.ticker_bought_actual_max_price[ticker]['tickSize']
+                step_size = self.parameters.ticker_bought_actual_max_price[ticker]['stepSize']
+                tick_size = self.parameters.ticker_bought_actual_max_price[ticker]['tickSize']
+                #Peut-être récupérer la quantité du portfolio à la place de calculer la quantité achetée
+                quantity = self.trading_manager.portfolio.actifs[ticker]['quantity']
+                quantity_step = quantity // step_size
+                quantity_bought = str(round(quantity_step*step_size,8))
 
-                quantity_bought = str(round((self.tradingManager.portfolio.actifs[ticker]['quantity']//stepSize)*stepSize,8))
-                newStopLossPrice = round((self.parameters.stop_loss_price*close_price//tickSize)*tickSize,8)
-                #print(ticker, newStopLossPrice)
-                self.tradingManager.cancel_replace(ticker, quantity_bought, newStopLossPrice)
+                scaled_price = self.parameters.stop_loss_prct * close_price
+                price_step = scaled_price // tick_size
+                new_stop_loss_price = round(price_step*tick_size,8)
+                print("NEW STOP LOSS PRICE", new_stop_loss_price)
+                self.trading_manager.cancel_replace(ticker, quantity_bought, new_stop_loss_price)
+            elif current_z_score < threshold and self.max_z_score[ticker] > threshold:
+                step_size = self.parameters.ticker_bought_actual_max_price[ticker]['stepSize']
+                tick_size = self.parameters.ticker_bought_actual_max_price[ticker]['tickSize']
+                #Peut-être récupérer la quantité du portfolio à la place de calculer la quantité achetée
+                quantity = self.trading_manager.portfolio.actifs[ticker]['quantity']
+                quantity_step = quantity // step_size
+                quantity_bought = str(round(quantity_step*step_size,8))
+                self.z_score_hits = True
+                print('SELLLLLLLL', now)
+                scaled_price = 0.995 * close_price
+                price_step = scaled_price // tick_size
+                new_stop_loss_price = round(price_step*tick_size,8)
+                print(new_stop_loss_price)
+                self.trading_manager.cancel_replace(ticker, quantity_bought, new_stop_loss_price)
 
-    def update_parameters(self, websocket_stream, data):
-        ticker = data['s']
-        variation = float(data['h'])-float(data['l'])
-        volume = float(data['v'])
-        nbOfTrades = data['n']
-        self.dataframe_storage.loc[ticker, ('Variation', websocket_stream)] = variation
-        self.dataframe_storage.loc[ticker, ('Volume', websocket_stream)] = volume
-        self.dataframe_storage.loc[ticker, ('NbOfTrades', websocket_stream)] = nbOfTrades
-        #print(ticker +' ' + websocket_stream+ ' :',  nbOfTrades)
-        if websocket_stream == '3m':
-            price_is_going_up = bool(float(data['c']) > float(data['o']))
-            self.dataframe_storage.loc[ticker, ('Price is going up', '')] = price_is_going_up
+    def update_parameters(self, websocket_stream, k):
+        ticker = k['s'][:-4]+'USDC'
+        variation = float(k['h'])-float(k['l'])
+        volume = float(k['v'])
+        nb_of_trades = k['n']
+        current_price = float(k['c'])
+        row_idx = self.get_ticker_index(ticker)
+
+        self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("Variation", websocket_stream)]] = variation
+        self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("Volume", websocket_stream)]] = volume
+        self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("NbOfTrades", websocket_stream)]] = nb_of_trades
+        
+        self.prices[ticker].append(current_price)
+        if len(self.prices[ticker]) > max(self.parameters.mean_rolling_size, self.parameters.std_rolling_size):
+            self.prices[ticker].pop(0)
+        
+        if websocket_stream == self.parameters.kline_type:
+            price_is_going_up = bool(float(k['c']) > float(k['o']))
+            self.data_storage[row_idx, PumpDump.COLUMN_MAPPING[("Price is going up", "")]] = price_is_going_up

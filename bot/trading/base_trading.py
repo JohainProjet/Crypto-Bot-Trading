@@ -1,50 +1,164 @@
 import time
+import sqlite3
+import json
+import datetime
 from abc import ABC, abstractmethod
-from bot.utils.helpers import Portfolio
+from bot.utils.helpers import Portfolio, Parameters
 from config import get_api_keys
 
+
+class SimulationSaver:
+	def save_to_db(self, portfolio : Portfolio, parameters : Parameters):
+		conn = sqlite3.connect(r'bot\results\results.db')
+		cursor = conn.cursor()
+		#portfolio_perf = (portfolio.portfolio_values[-1]/portfolio.cash_at_start - 1)*100
+		if parameters.program_type in ['PROD', 'TEST']:
+			start_date = portfolio.creation_date
+			end_date = datetime.datetime.now()
+		elif parameters.program_type == 'BACKTEST':
+			start_date = parameters.start_date
+			end_date = parameters.end_date
+		cash, assets_value = portfolio.initial_cash, 0
+		simulation_type = parameters.program_type
+		portfolio_values = json.dumps([cash])
+		volume, variation, nb_of_trades = parameters.limits.values()
+		stop_loss = parameters.stop_loss_prct
+		kline_type = parameters.kline_type
+		cursor.execute('''
+			INSERT OR IGNORE INTO Results (
+				simulation_type,
+				start_date,
+				end_date,
+				portfolio_values,
+				cash,
+				assets_value,
+				volume,
+				variation,
+				nb_of_trades,
+				stop_loss,
+				kline_type
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		''', (
+			simulation_type,
+			start_date,
+			end_date,
+			portfolio_values,
+			cash,
+			assets_value,
+			volume,
+			variation,
+			nb_of_trades,
+			stop_loss,
+			kline_type
+		))
+		conn.commit()
+
+	def update_portfolio_in_db(self, portfolio: Portfolio, parameters: Parameters, timestamp = None):
+		conn = sqlite3.connect(r'bot/results/results.db')
+		cursor = conn.cursor()
+
+		cash, asset_value = portfolio.evaluate_portfolio_value(timestamp, verbose=False)
+		portfolio_value = cash + asset_value
+		volume, variation, nb_of_trades = parameters.limits.values()
+		stop_loss = parameters.stop_loss_prct
+		kline_type = parameters.kline_type
+
+		cursor.execute('''
+			SELECT Portfolio_values
+			FROM Results
+			WHERE simulation_type = ?
+			AND start_date = ?
+			AND end_date = ?
+			AND volume = ?
+			AND variation = ?
+			AND nb_of_trades = ?
+			AND stop_loss = ?
+			AND kline_type = ?
+		''', (
+			parameters.program_type,
+			parameters.start_date,
+			parameters.end_date,
+			volume,
+			variation,
+			nb_of_trades,
+			stop_loss,
+			kline_type
+		))
+		row = cursor.fetchone()
+
+		portfolio_values = list(json.loads(row[0]))
+		portfolio_values.append(portfolio_value)
+		portfolio_values = json.dumps(portfolio_values)
+
+		cursor.execute('''
+			UPDATE Results
+			SET Portfolio_values = ?
+			WHERE simulation_type = ?
+			AND start_date = ?
+			AND end_date = ?
+			AND volume = ?
+			AND variation = ?
+			AND nb_of_trades = ?
+			AND stop_loss = ?
+			AND kline_type = ?
+		''', (
+			portfolio_values,
+			parameters.program_type,
+			parameters.start_date,
+			parameters.end_date,
+			volume,
+			variation,
+			nb_of_trades,
+			stop_loss,
+			kline_type
+		))
+
+		conn.commit()
+		conn.close()
+
 class TradingManager(ABC):
-    def __init__(self, isTestMode : str, portfolio : Portfolio, durationTime):
-        self.isTestMode = isTestMode
-        self.api_key, self.api_secret = get_api_keys(environnement=isTestMode)
-        self.portfolio = portfolio
-        self.durationTime = durationTime
-    
-    @abstractmethod
-    def start(self):
-        pass
-    
-    @abstractmethod
-    def stop(self):
-        pass
+	def __init__(self, parameters : Parameters, portfolio : Portfolio, simulation_saver : SimulationSaver):
+		self.api_key, self.api_secret = get_api_keys(environnement=parameters.program_type)
+		self.portfolio = portfolio
+		self.parameters = parameters
+		if self.parameters.program_type == 'BACKTEST':
+			simulation_saver.save_to_db(self.portfolio, self.parameters)
+		self.simulation_saver = simulation_saver
 
-    @abstractmethod
-    def place_stop_loss(self, ticker, quantity_bought, stopLossPrice):
-        pass
-    
-    @abstractmethod
-    def buy(self, ticker, cash_used, excecuted_price=0, time=0):
-        pass
-    
-    @abstractmethod
-    def cancel_replace(self, ticker, quantity_bought, newStopLossPrice):
-        pass
+	@abstractmethod
+	def start(self):
+		pass
 
-    def periodic_sleep(self, total_duration, interval):
-        elapsed_time = 0
+	@abstractmethod
+	def stop(self):
+		pass
 
-        while elapsed_time < total_duration:
-            time.sleep(interval)
-            elapsed_time += interval
+	@abstractmethod
+	def place_stop_loss(self, ticker, quantity_bought, stop_loss_price):
+		pass
 
-            remaining_time = total_duration - elapsed_time
-            print(f"Temps écoulé : {elapsed_time} secondes. Temps restant : {remaining_time} secondes.")
-            self.screenshot()
+	@abstractmethod
+	def buy(self, ticker, cash_used, excecuted_price=0, time_=0):
+		pass
 
-    def screenshot(self):
-        print('-------------------')
-        print('Transaction history :')
-        print(self.portfolio.df_transaction_history)
-        self.portfolio.evaluate_portfolio_value(verbose=True)
+	@abstractmethod
+	def cancel_replace(self, ticker, quantity_bought, new_stop_loss_price):
+		pass
 
+	def periodic_sleep(self, total_duration, interval, timestamp = None):
+		elapsed_time = 0
 
+		while elapsed_time < total_duration:
+			time.sleep(interval)
+			elapsed_time += interval
+			remaining_time = total_duration - elapsed_time
+			print(f"Temps écoulé : {elapsed_time} s. Temps restant : {remaining_time} secondes.")
+			self.screenshot(timestamp)
+
+	def screenshot(self, timestamp = None):
+		print('-------------------')
+		print('Transaction history :')
+		print(self.portfolio.df_transaction_history)
+		if self.parameters.program_type == 'BACKTEST':
+			self.simulation_saver.update_portfolio_in_db(self.portfolio, self.parameters, timestamp)
