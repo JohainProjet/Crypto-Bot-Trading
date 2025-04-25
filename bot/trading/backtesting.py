@@ -8,10 +8,10 @@ from bot.trading.base_trading import TradingManager
 from bot.strategy.base_strategy import Strategy
 
 class BackTesting(TradingManager):
-    def __init__(self, parameters, portfolio, list_tickers, simulation_saver):
+    def __init__(self, parameters, portfolio, simulation_saver):
         super().__init__(parameters,  portfolio, simulation_saver)
-        self.list_tickers = list_tickers
-        self.datas = Datas(list_tickers, parameters.start_date, parameters.end_date)
+        self.list_tickers = parameters.list_tickers
+        self.datas = Datas(parameters)
         self.orders = {}
 
     def set_pump_and_dump(self, pump_and_dump):
@@ -33,7 +33,7 @@ class BackTesting(TradingManager):
         return None
     def message_processing_kline_back_testing(self, message):
         if message.get('result',0) is None:
-            print(f'Connection open at {datetime.datetime.now()} with websocket kline 3minutes.')
+            print(f'Connection open at {datetime.datetime.now()} with websocket kline.')
             return None
         data = message['data']
         self.datas.strategy.update_parameters(self.parameters.kline_type, data['k'])
@@ -110,19 +110,19 @@ class Datas:
     path_ = r'bot\data\historical_datas'
     path_files_klines = []
     path_files_rolling = []
-    def __init__(self, list_tickers, start_date, end_date, strategy = None):
-        self.list_tickers = list_tickers
+    def __init__(self, parameters, strategy = None):
+        self.list_tickers = parameters.list_tickers
         self.strategy = strategy
-        self.start_date = start_date
-        self.end_date = end_date
+        self.start_date = parameters.start_date
+        self.end_date = parameters.end_date
         if not Datas.path_files_klines:
             Datas.path_files_klines = [os.path.join(Datas.path_,
-                                                    'kline3m',
-                                                    f'{ticker}.txt') for ticker in list_tickers]
+                                                    f'kline{parameters.kline_type}',
+                                                    f'{ticker}.txt') for ticker in parameters.list_tickers]
         if not Datas.path_files_rolling:
             Datas.path_files_rolling = [os.path.join(Datas.path_,
                                                      'historical_window_1h',
-                                                     f'{ticker}.txt') for ticker in list_tickers]
+                                                     f'{ticker}.txt') for ticker in parameters.list_tickers]
         if not type(self).dict_global:
             type(self).create_global_dict_time(self.start_date, self.end_date)
         self.dict_time = type(self).dict_global
@@ -171,3 +171,13 @@ class Datas:
         print("Temps pris pour former le dicitonnaire de taille", t2-t1)
         cls.dict_global = sorted_items
         return sorted_items
+
+
+
+"""                      Time Type         Ticker  Quantity  Ticker price  Cash cost
+0 2025-04-14 16:56:32.494  BUY        ZECUSDC     0.312      32.02000     -10.00
+1 2025-04-14 19:00:13.157  BUY       TNSRUSDC   242.500       0.12370     -30.03
+2 2025-04-14 19:00:27.975  BUY          TUSDC  2173.900       0.01380     -30.03
+3 2025-04-14 19:00:32.656  BUY        STXUSDC    49.800       0.60200     -30.01
+4 2025-04-14 19:00:36.398  BUY       BLURUSDC   309.900       0.09680     -30.03
+5 2025-04-14 20:59:15.058  BUY  BANANAS31USDC  1934.000       0.00517     -10.01 """

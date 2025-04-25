@@ -35,12 +35,11 @@ def binary_search_get_price(dict_global_time, crypto, timestamp:datetime.datetim
         for flux in dict_global_time[final_time]:
             try:
                 if crypto[:-4]+'USDT' == flux["data"]['s']:
-                    res = {'symbol': crypto, 'price': float(flux['data']['k']['c'])}
+                    res = {'symbol': crypto, 'price': flux['data']['k']['c']}
                     return res
             except Exception:
                 continue
     return ['ERROR']
-
 
 @dataclass
 class Parameters:
@@ -57,15 +56,13 @@ class Parameters:
     ticker_bought_actual_max_price : dict = field(default_factory=dict)
     crypto_bought : list = field(default_factory=list)
 
-
 class Portfolio:
     def __init__(self, program_type : str, cash : float, actifs : dict = {}):
         self.program_type = program_type
         self.creation_date = datetime.datetime.now()
-        self.cash = cash
+        self.current_cash = cash
         self.initial_cash = cash
-        self.actifs = actifs
-        self.list_prices = []
+        self.actifs = actifs #{"quantity" : quantity, "entry_price" : entry_price}
         self.df_transaction_history = pd.DataFrame(
             columns=['Time',
                      'Type',
@@ -76,64 +73,76 @@ class Portfolio:
         )
 
     def __str__(self):
-        return (f'Cash : {self.cash} \n'
+        return (f'Cash : {self.current_cash} \n'
                 f'Actifs : {self.actifs} \n'
                 f'Transaction history : {self.df_transaction_history}')
 
     def check_buy_sell(self, transaction_type, ticker, quantity, ticker_price):
-        fees_operation = self.calculate_transaction_fees(quantity, ticker_price)
         if transaction_type == 'BUY':
-            assert self.cash >= quantity*ticker_price + fees_operation,'Transaction failed, not enough cash.'
+            assert self.current_cash >= quantity*ticker_price,'Transaction failed, not enough cash.'
         elif transaction_type == 'SELL':
             assert ticker in self.actifs, 'Transaction failed, asset is not in portfolio.'
 
     def transaction_order(self, transaction_type, transaction_time, ticker, quantity, ticker_price):
-        fees_operation = self.calculate_transaction_fees(quantity, ticker_price)
         self.check_buy_sell(transaction_type, ticker, quantity, ticker_price)
+        commission = self.calculate_transaction_fees(quantity)
         if transaction_type == 'BUY':
-            self.execute_buy(transaction_time, ticker, quantity, ticker_price, fees_operation)
+            cash_cost = quantity * ticker_price
+            quantity = quantity - commission
         elif transaction_type == 'SELL':
-            self.execute_sell(transaction_time, ticker, quantity, ticker_price, fees_operation)
+            cash_cost = quantity * ticker_price - commission * ticker_price
+        if transaction_type == 'BUY':
+            self.execute_buy(transaction_time, ticker, quantity, ticker_price, cash_cost)
+        elif transaction_type == 'SELL':
+            self.execute_sell(transaction_time, ticker, quantity, ticker_price, cash_cost)
 
-    def execute_buy(self, transaction_time, ticker, quantity, ticker_price, fees_operation):
+    def execute_buy(self, transaction_time, ticker, quantity, entry_price, cash_paid):
         if ticker not in self.actifs:
-            self.actifs[ticker] = {"quantity" : quantity, "ticker_price" : ticker_price}
+            self.actifs[ticker] = {"quantity" : quantity,
+                                   "entry_price" : entry_price,
+                                   'current_price' : entry_price}
         else:
             self.actifs[ticker]['quantity'] += quantity
-            self.actifs[ticker]['ticker_price'] = ticker_price
-        self.cash -= quantity*ticker_price + fees_operation
-        self.add_to_transaction_history('BUY', transaction_time, ticker, quantity, ticker_price)
+            self.actifs[ticker]['entry_price'] = entry_price
+        self.current_cash -= cash_paid
+        self.add_to_transaction_history('BUY', transaction_time, ticker, quantity, entry_price, - cash_paid)
 
-    def execute_sell(self, transaction_time, ticker, quantity, ticker_price, fees_operation):
-        usd_price = quantity*ticker_price
-        if ticker not in self.actifs:
-            print('Transaction failed, asset is not in portfolio.')
-            return
+    def execute_sell(self, transaction_time, ticker, quantity, ticker_price, cash_receive):
+        print('inside sell', transaction_time, ticker, quantity, ticker_price, cash_receive)
         quantity = min(quantity, self.actifs[ticker]['quantity'])
         self.actifs[ticker]['quantity']-=quantity
-        self.cash += usd_price-fees_operation
-        self.add_to_transaction_history('SELL', transaction_time, ticker, quantity, ticker_price)
+        self.current_cash += cash_receive
+        self.add_to_transaction_history('SELL', transaction_time, ticker, quantity, ticker_price, cash_receive)
         del self.actifs[ticker]
-
+    """ 1 2025-04-16 10:48:16.897  SELL  1000CHEEMSUSDC  7356.00000      0.001360       3.02 
+    2025-04-16 08:48:17.896 UTC DEBUG root: ---------------
+    2025-04-16 08:48:17.896 UTC DEBUG root: SELL DONE
+    2025-04-16 08:48:17.896 UTC DEBUG root: Ticker : 1000CHEEMSUSDC | USDT en plus : 10.00416000 | Au prix : 0.00136000
+    2025-04-16 08:48:17.896 UTC DEBUG root: ---------------
+    SELL 2025-04-16 10:48:16.897000 1000CHEEMSUSDC 7356.0 0.00136 0.00950395 USDC
+    """
     @staticmethod
-    def calculate_transaction_fees(quantity, ticker_price):
-        fees_transaction = 0.001
-        return quantity * ticker_price * fees_transaction
+    def calculate_transaction_fees(quantity, commission_asset = None):
+        """ fees in commission asset"""
+        fees_transaction = 0.0009500
+        if commission_asset == 'BNB':
+            fees_transaction = 0.0007125
+        return quantity * fees_transaction
 
     def add_to_transaction_history(self,
                                    transaction_type,
                                    transaction_time,
-                                   ticker, quantity,
-                                   ticker_price):
-        cash_cost = (quantity * ticker_price * (-1 if transaction_type == 'BUY' else 1)
-                     - self.calculate_transaction_fees(quantity, ticker_price))
+                                   ticker, 
+                                   quantity,
+                                   ticker_price,
+                                   cash_operation):
         transaction = {
             'Time' : transaction_time,
             'Type' : transaction_type,
             'Ticker' : ticker,
             'Quantity' : quantity,
             'Ticker price' : ticker_price,
-            'Cash cost' : round(cash_cost, 2)
+            'Cash cost' : round(cash_operation, 2)
         }
         if self.df_transaction_history.empty:
             self.df_transaction_history = pd.DataFrame([transaction])
@@ -146,20 +155,25 @@ class Portfolio:
             ignore_index = True
         )
 
-    def save(self, start_date, cash, assets_value):
+    def save(self, start_date, current_cash, assets_value):
         with open(r'bot\results\results.txt', 'a', encoding='utf-8') as f:
             f.write(f"Start Date : {start_date} |"
                     f"End Date : {datetime.datetime.now()} |"
-                    f"Cash : {cash} |",
+                    f"Cash : {current_cash} |",
                     f"Assets_value : {assets_value} |",
-                    f"Portfolio_change : {((cash+assets_value)/self.initial_cash - 1)*100:.2f}%\n")
+                    f"Portfolio_change : {((current_cash+assets_value)/self.initial_cash - 1)*100:.2f}%\n")
 
     def message_api(self, _, source):
         message : dict = json.loads(source)
         if 'error' in message:
             print(message['error']['msg'])
         else:
-            self.list_prices = message["result"]
+            self.update_current_price(message["result"]) 
+
+    def update_current_price(self, list_current_prices):
+        for dict_symbol_price in list_current_prices:
+            ticker = dict_symbol_price['symbol']
+            self.actifs[ticker]['current_price'] = float(dict_symbol_price['price'])
 
     def fetch_prices(self, timestamp = None):
         if self.program_type in ['PROD', 'TEST']:
@@ -171,16 +185,15 @@ class Portfolio:
                 binance_get_price_api_client.stop()
             except Exception as e:
                 print(f"Prix non récupéré : {e}")
-            return self.list_prices
         else:
             dict_global_time = self.get_dict_global_times()
-            return [
+            self.update_current_price([
                 binary_search_get_price(
                     dict_global_time,
                     crypto,
                     timestamp
                 ) for crypto in self.actifs.keys()
-            ]
+            ])
 
     @staticmethod
     def get_dict_global_times():
@@ -188,27 +201,24 @@ class Portfolio:
         return Datas.dict_global
 
     def get_assets_value(self, timestamp = None):
-        list_prices = self.fetch_prices(timestamp)
+        self.fetch_prices(timestamp)
         assets_value = 0
-        for dict_symbol_price in list_prices:
-            try:#TO MODIFY (self.list_prices, self.actifs can be merge maybe)
-                assets_value += self.actifs[dict_symbol_price['symbol']]['quantity'] * float(dict_symbol_price['price'])
-            except KeyError:
-                assets_value += 0
+        for dict_ in self.actifs.values():
+            assets_value += dict_['quantity'] * float(dict_['current_price'])
         return assets_value
 
     def evaluate_portfolio_value(self, timestamp = None, save_to_file = False, verbose = True):
         assets_value = self.get_assets_value(timestamp)
-        portfolio_value = self.cash+assets_value
+        portfolio_value = self.current_cash+assets_value
         if verbose:
             print('---------------')
-            print(f'Valeur du cash : {self.cash}')
+            print(f'Valeur du cash : {self.current_cash}')
             print(f'Valeur des actifs : {assets_value}')
             print(f'Valeur du Portefeuille : {portfolio_value}')
             print('---------------')
         if save_to_file:
-            self.save(self.creation_date, self.cash, assets_value)
-        return self.cash, assets_value
+            self.save(self.creation_date, self.current_cash, assets_value)
+        return self.current_cash, assets_value
 
 def periodic_sleep(total_duration, interval):
     elapsed_time = 0

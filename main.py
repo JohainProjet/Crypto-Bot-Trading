@@ -10,9 +10,9 @@ from bot.trading.base_trading import SimulationSaver
 config_logging(logging, logging.INFO)
 
 
-DEFAULT_PROGRAM_MODE = 'BACKTEST'
-START_DATE = datetime.datetime(2025, 4, 13, 16, 0,0)
-END_DATE = datetime.datetime(2025, 4, 13, 20, 0, 0)
+DEFAULT_PROGRAM_MODE = 'PROD'
+START_DATE = datetime.datetime(2025, 4, 19, 12, 30,0)
+END_DATE = datetime.datetime(2025, 4, 19, 21, 10, 0)
 TRADE_LOG_FILE = r"bot\results\TradesLogFile.txt"
 KLINE_TYPE = '1m'
 LIST_TICKERS = load_tickers_if_empty([])
@@ -21,13 +21,6 @@ STD_ROLLING_SIZE = 100 #Used to clean position
 MEAN_ROLLING_SIZE = 100 #Used to clean position
 
 def main(simulation_saver : SimulationSaver, params : Parameters):
-    t1 = time.time()
-    if params.program_type == 'BACKTEST':
-        with open(TRADE_LOG_FILE, "a", encoding='utf-8') as f:
-            json.dump(params.limits, f)
-            f.write('\t')
-            f.write(str(params.stop_loss_prct))
-            f.write("\n")
 
     portfolio = Portfolio(params.program_type, 500, {})
 
@@ -44,11 +37,7 @@ def main(simulation_saver : SimulationSaver, params : Parameters):
         strategy.trading_manager.get_open_orders_and_cancel()
 
     strategy.trading_manager.start()
-    if params.program_type == 'BACKTEST':
-        with open(TRADE_LOG_FILE, "a", encoding='utf-8') as f:
-            f.write(f'Durée {time.time()- t1}.\n')
-            f.write("------------------------------------------------------------------\n")
-            f.write("\n")
+
     if params.program_type == 'BACKTEST':
         cash, assets_value = portfolio.evaluate_portfolio_value(END_DATE)
     elif params.program_type in ['PROD', 'TEST']:
@@ -88,8 +77,8 @@ def objective(trial):
 
 
 if __name__ == '__main__':
-    """ study = optuna.create_study(direction="maximize")  # On veut maximiser la performance
-    study.optimize(objective, n_trials=50)  # Lancer 50 simulations
+    """ study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=50)
 
     print("Meilleurs paramètres :", study.best_params)
     print("Meilleur score :", study.best_value)"
@@ -114,3 +103,10 @@ if __name__ == '__main__':
                             LIST_TICKERS)
     simulation_saver = SimulationSaver()
     main(simulation_saver, parameters)
+
+
+
+
+""" 2025-04-19 19:48:51.970 UTC DEBUG root: Code : -1013
+2025-04-19 19:48:51.996 UTC DEBUG root: Message : Market is closed.
+2025-04-19 19:48:51.996 UTC DEBUG root: data_error : None """

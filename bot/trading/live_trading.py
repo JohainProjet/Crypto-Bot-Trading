@@ -13,10 +13,10 @@ from bot.trading.base_trading import TradingManager, SimulationSaver
 from bot.strategy.base_strategy import Strategy
 
 class LiveTrading(TradingManager):
-    def __init__(self, parameters, portfolio, list_tickers, simulation_saver : SimulationSaver):
+    def __init__(self, parameters, portfolio, simulation_saver : SimulationSaver):
         super().__init__(parameters, portfolio, simulation_saver)
-        self.websocket_manager = WebsocketManager(parameters.program_type, self.api_key, self.api_secret)
-        self.list_tickers : List[str] = list_tickers
+        self.websocket_manager = WebsocketManager(parameters, self.api_key, self.api_secret)
+        self.parameters = parameters
 
     def get_ticker_tick_size(self, ticker):
         resp = self.websocket_manager.client.exchange_info()['symbols']
@@ -26,16 +26,15 @@ class LiveTrading(TradingManager):
         return None
 
     def start(self):
-        list_ticker_kline3m = [ticker.lower()+'@kline_3m' for ticker in self.list_tickers]
-        list_ticker_rolling1h = [ticker.lower()+'@ticker_1h' for ticker in self.list_tickers]
+        list_ticker_kline = [ticker.lower()+f'@kline_{self.parameters.kline_type}' for ticker in self.parameters.list_tickers]
+        list_ticker_rolling1h = [ticker.lower()+'@ticker_1h' for ticker in self.parameters.list_tickers]
 
-        self.websocket_manager.ws_client_kline_3m.subscribe(stream = list_ticker_kline3m)
+        self.websocket_manager.ws_client_kline.subscribe(stream = list_ticker_kline)
         self.websocket_manager.ws_client_rolling_1h.subscribe(stream = list_ticker_rolling1h)
 
         logging.info('start sleep')
         self.periodic_sleep(self.parameters.duration_time, 300)
         self.stop()
-
 
     def stop(self):
         #Ici appeler portfolio evaluate
@@ -46,7 +45,7 @@ class LiveTrading(TradingManager):
             action=SpotWebsocketStreamClient.ACTION_UNSUBSCRIBE
         )
         self.websocket_manager.ws_user_data.stop()
-        self.websocket_manager.ws_client_kline_3m.stop()
+        self.websocket_manager.ws_client_kline.stop()
         self.websocket_manager.ws_client_rolling_1h.stop()
 
     def place_stop_loss(self, ticker, quantity_bought, stop_loss_price):
@@ -98,8 +97,8 @@ class LiveTrading(TradingManager):
 
 
 class WebsocketManager:
-    def __init__(self, program_type : str, api_key, api_secret):
-        self.program_type = program_type
+    def __init__(self, parameters, api_key, api_secret):
+        self.program_type = parameters.program_type
         self.api_key = api_key
         self.api_secret = api_secret
         self.message_handler : MessageHandler = MessageHandler(None)
@@ -107,7 +106,7 @@ class WebsocketManager:
         self.client = self.create_client()
         self.listen_key = self.get_listen_key()
         self.ws_user_data = self.create_websocket_stream('userData')
-        self.ws_client_kline_3m = self.create_websocket_stream('kline3m')
+        self.ws_client_kline = self.create_websocket_stream('kline')
         self.ws_client_rolling_1h = self.create_websocket_stream('rolling1h')
 
     def create_client(self):
@@ -147,7 +146,7 @@ class WebsocketManager:
             )
             ws_user_data.user_data(listen_key=self.listen_key)
             return ws_user_data
-        if on_message_stream_name == 'kline3m':
+        if on_message_stream_name == 'kline':
             #Si on utilise "wss://stream.testnet.binance.vision",
             # #on va récupérer les données du test net qui sont très peu représentatatives du marché
             stream_url = "wss://stream.binance.com:9443"
@@ -185,7 +184,7 @@ class MessageHandler:
     def message_processing_kline(self, _, source):
         message : dict = json.loads(source)
         if message.get('result',0) is None:
-            print(f'Connection open at {datetime.datetime.now()} with websocket kline 3minutes.')
+            print(f'Connection open at {datetime.datetime.now()} with websocket kline.')
             return None
         self.pump_and_dump.update_parameters(self.pump_and_dump.parameters.kline_type, message['data']['k'])
         self.pump_and_dump.take_decision(message['data'])
@@ -296,8 +295,9 @@ class MessageHandler:
                 logging.debug('---------------')
                 working_time_order = datetime.datetime.fromtimestamp(int(message['T'])/1000)
                 executed_qty = float(message['l'])
+                commission, commission_asset = float(message['n']), message['N']
+                print(side, working_time_order, ticker, executed_qty, executed_price, commission, commission_asset)
                 try:
-                    print(side, working_time_order, ticker, executed_qty, executed_price)
                     self.pump_and_dump.trading_manager.portfolio.transaction_order(
                         side,
                         working_time_order,
@@ -306,6 +306,5 @@ class MessageHandler:
                         executed_price
                     )
                 except Exception:
-                    #Bizarre cette erreur s'est déclenchée alors que j'ai vendu tout,
-                    # #y'a un problème bizarre avec ce try peut-être
+                    # To Check
                     print("error impossible de sell") 
