@@ -21,7 +21,8 @@ class BackTesting(TradingManager):
         if message.get('result',0) is None:
             print(f'Connection open at {datetime.datetime.now()} with rolling windows 1hour.')
             return None
-        self.datas.strategy.update_parameters('1h', message['data'])
+        data = message['data']
+        self.datas.strategy.update_parameters('1h', data)
         return None
 
     def get_ticker_tick_size(self, ticker):
@@ -31,15 +32,33 @@ class BackTesting(TradingManager):
             if elem['symbol'] == ticker:
                 return float(elem['filters'][1]['stepSize']), float(elem['filters'][0]['tickSize'])
         return None
+
     def message_processing_kline_back_testing(self, message):
         if message.get('result',0) is None:
             print(f'Connection open at {datetime.datetime.now()} with websocket kline.')
             return None
         data = message['data']
+        ticker :str = data['k']['s']
         self.datas.strategy.update_parameters(self.parameters.kline_type, data['k'])
         self.datas.strategy.take_decision(data)
-        if data['s'] in self.orders:
-            self.check_stop_losses(data)
+
+        matching_key = next((key for key in self.orders.keys() if key.startswith(ticker[:-4])), None)
+        k = data['k']['s']
+        if matching_key:
+            self.check_stop_losses(matching_key, data)
+        return None
+    
+        #{"stream": "1000catusdc@miniTicker", 
+        # "data": {"e": "24hrMiniTicker", "E": 1745921398902, "s": "1000CATUSDC", 
+        # "c": "0.00714000", "o": "0.00728000", "h": "0.00750000", "l": "0.00685000", 
+        # "v": "14210343.70000000", "q": "102270.93361700"}}
+
+    def message_processing_mini_ticker_back_testing(self, message):
+        if message.get('result',0) is None:
+            print(f'Connection open at {datetime.datetime.now()} with mini ticker.')
+            return None
+        data = message['data']
+        self.datas.strategy.update_parameters(None, data)
         return None
 
     def start(self):
@@ -56,6 +75,8 @@ class BackTesting(TradingManager):
                     self.message_processing_kline_back_testing(event)
                 elif 'ticker' in event['stream']:
                     self.message_processing_rolling_back_testing(event)
+                elif 'miniTicker' in event['stream']:
+                    self.message_processing_mini_ticker_back_testing(event)
 
         last_time = list(self.datas.dict_time.keys())[-1]
         self.portfolio.evaluate_portfolio_value(last_time)
@@ -67,8 +88,8 @@ class BackTesting(TradingManager):
             self.portfolio.df_transaction_history.to_string(f, index=True)
             f.write("\n\n")
 
-    def buy(self, ticker, cash_used, excecuted_price=0, time_=0):
-        executed_qty = cash_used/excecuted_price
+    def buy(self, ticker, quote_order_qty, excecuted_price=0, time_=0):
+        executed_qty = quote_order_qty/excecuted_price
         step_size = self.get_ticker_tick_size(ticker)[0]
         executed_qty = round((executed_qty//step_size)*step_size,8)
         working_time_order = datetime.datetime.fromtimestamp(int(time_)/1000)
@@ -80,20 +101,18 @@ class BackTesting(TradingManager):
         self.datas.strategy.define_stop_losses(ticker, excecuted_price)
         print(self.portfolio.df_transaction_history)
 
-    def cancel_replace(self, ticker, quantity_bought, new_stop_loss_price):
-        self.place_stop_loss(ticker, quantity_bought, new_stop_loss_price)
-
-    def place_stop_loss(self, ticker, quantity_bought, stop_loss_price):
-        self.orders[ticker] = {"quantity" : float(quantity_bought),
+    def cancel_replace(self, pair : str, quantity_bought, new_stop_loss_price):
+        self.place_stop_loss(pair, quantity_bought, new_stop_loss_price)
+    
+    def place_stop_loss(self, pair, quantity_bought, stop_loss_price):
+        self.orders[pair] = {"quantity" : float(quantity_bought),
                                'stopLossPrice' : stop_loss_price}
 
-    def check_stop_losses(self, data):
-        ticker = data['s']
+    def check_stop_losses(self, ticker, data):
         working_time_order = datetime.datetime.fromtimestamp(int(data['E'])/1000)
 
-        current_price = float(data['k']['c'])
-        #print(self.orders[ticker]['stopLossPrice'], current_price)
-        if self.orders[ticker]['stopLossPrice'] >= current_price:
+        current_price = self.datas.strategy.prices[ticker][-1]
+        if self.orders[ticker]['stopLossPrice'] >= current_price: #stoplossPrice is incorrect (in usdt when it needs to be in zrxbtc)
             try:
                 self.portfolio.transaction_order('SELL',
                                                 working_time_order,
@@ -110,6 +129,7 @@ class Datas:
     path_ = r'bot\data\historical_datas'
     path_files_klines = []
     path_files_rolling = []
+    path_files_mini_ticker = []
     def __init__(self, parameters, strategy = None):
         self.list_tickers = parameters.list_tickers
         self.strategy = strategy
@@ -118,11 +138,15 @@ class Datas:
         if not Datas.path_files_klines:
             Datas.path_files_klines = [os.path.join(Datas.path_,
                                                     f'kline{parameters.kline_type}',
-                                                    f'{ticker}.txt') for ticker in parameters.list_tickers]
+                                                    f'{ticker}.txt') for ticker in parameters.list_tickers if ticker.endswith('USDT')]
         if not Datas.path_files_rolling:
             Datas.path_files_rolling = [os.path.join(Datas.path_,
                                                      'historical_window_1h',
-                                                     f'{ticker}.txt') for ticker in parameters.list_tickers]
+                                                     f'{ticker}.txt') for ticker in parameters.list_tickers if ticker.endswith('USDT')]
+        if not Datas.path_files_mini_ticker:
+            Datas.path_files_mini_ticker = [os.path.join(Datas.path_,
+                                                     'mini_ticker',
+                                                     f'{ticker}.txt') for ticker in parameters.list_tickers if not ticker.endswith('USDT')]
         if not type(self).dict_global:
             type(self).create_global_dict_time(self.start_date, self.end_date)
         self.dict_time = type(self).dict_global
@@ -145,7 +169,9 @@ class Datas:
                         try:
                             message = json.loads(line)
                             time_ = datetime.datetime.fromtimestamp(int(message['data']["E"])/1000)
-                            if start_date <= time_ <= end_date:
+                            if time_ > end_date:
+                                break
+                            if start_date <= time_:
                                 dict_time[time_].append(message)
                         except json.JSONDecodeError:
                             continue
@@ -158,6 +184,23 @@ class Datas:
                         try:
                             message = json.loads(line)
                             time_ = datetime.datetime.fromtimestamp(int(message["data"]['E'])/1000)
+                            if time_ > end_date:
+                                break
+                            if start_date <= time_ <= end_date:
+                                dict_time[time_].append(message)
+                        except json.JSONDecodeError:
+                            continue
+            except FileNotFoundError:
+                pass
+        for path in cls.path_files_mini_ticker:
+            try:
+                with open(path, 'r', encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            message = json.loads(line)
+                            time_ = datetime.datetime.fromtimestamp(int(message["data"]['E'])/1000)
+                            if time_ > end_date:
+                                break
                             if start_date <= time_ <= end_date:
                                 dict_time[time_].append(message)
                         except json.JSONDecodeError:
@@ -171,13 +214,3 @@ class Datas:
         print("Temps pris pour former le dicitonnaire de taille", t2-t1)
         cls.dict_global = sorted_items
         return sorted_items
-
-
-
-"""                      Time Type         Ticker  Quantity  Ticker price  Cash cost
-0 2025-04-14 16:56:32.494  BUY        ZECUSDC     0.312      32.02000     -10.00
-1 2025-04-14 19:00:13.157  BUY       TNSRUSDC   242.500       0.12370     -30.03
-2 2025-04-14 19:00:27.975  BUY          TUSDC  2173.900       0.01380     -30.03
-3 2025-04-14 19:00:32.656  BUY        STXUSDC    49.800       0.60200     -30.01
-4 2025-04-14 19:00:36.398  BUY       BLURUSDC   309.900       0.09680     -30.03
-5 2025-04-14 20:59:15.058  BUY  BANANAS31USDC  1934.000       0.00517     -10.01 """
