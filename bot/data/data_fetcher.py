@@ -3,10 +3,10 @@ import time
 import json
 from binance.websocket.spot.websocket_stream import SpotWebsocketStreamClient
 
-path = r'bot\data\historical_datas'
+path = r'bot/data/historical_datas'
 
 def get_tickers():
-    with open(r"bot\data\list_all_pairs.txt", 'r') as f:
+    with open(r"bot/data/list_all_pairs.txt", 'r') as f:
         listTickers = f.read().splitlines()
     return listTickers
 

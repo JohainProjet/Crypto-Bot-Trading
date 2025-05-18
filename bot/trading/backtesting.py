@@ -100,7 +100,7 @@ class BackTesting(TradingManager):
         self.stop()
 
     def stop(self):
-        with open(r"bot\results\TradesLogFile.txt", "a", encoding='utf-8') as f:
+        with open(r"bot/results/TradesLogFile.txt", "a", encoding='utf-8') as f:
             f.write("\n")
             self.portfolio.df_transaction_history.to_string(f, index=True)
             f.write("\n\n")
@@ -145,7 +145,7 @@ class BackTesting(TradingManager):
 class DataManager:
     dict_time = defaultdict(list)
     def __init__(self):
-        self.path = r'bot\data\historical_datas_from_api'
+        self.path = r'bot/data/historical_datas_from_api'
         self.klines : dict = {}
         self.rolling_window = {}
         self.kline_write_counter = {}
@@ -448,7 +448,7 @@ class DataManager:
             print('klines_mean', sum(moyenne_update_klines)/len(moyenne_update_klines))
 
 class Datas:
-    path_ = r'bot\data\historical_datas'
+    path_ = r'bot/data/historical_datas'
     path_files_klines = []
     path_files_rolling = []
     path_files_mini_ticker = []
@@ -478,11 +478,11 @@ class Datas:
 
     def build_path(self, symbol, month):
         base_folder = (
-            r"C:\Users\aissa\OneDrive\Bureau\Johain\Informatique\github\Crypto-Bot-Trading"
-            r"\bot\data\historical_datas_from_api\zip_klines\data\spot\monthly\klines"
+            r"./"
+            r"bot/data/historical_datas_from_api/zip_klines/data/spot/monthly/klines"
         )
         path = (
-            f"{base_folder}\\{symbol}\\1s\\2025-01-01_2025-04-30\\"
+            f"{base_folder}/{symbol}/1s/2025-01-01_2025-04-30/"
             f"{symbol}-1s-{month}.zip"
         )
         return path

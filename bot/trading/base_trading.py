@@ -9,7 +9,7 @@ from config import get_api_keys
 
 class SimulationSaver:
 	def save_to_db(self, portfolio : Portfolio, parameters : Parameters):
-		conn = sqlite3.connect(r'bot\results\results.db')
+		conn = sqlite3.connect(r'bot/results/results.db')
 		cursor = conn.cursor()
 		#portfolio_perf = (portfolio.portfolio_values[-1]/portfolio.cash_at_start - 1)*100
 		if parameters.program_type in ['PROD', 'TEST']:

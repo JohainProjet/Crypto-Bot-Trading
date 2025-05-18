@@ -11,7 +11,7 @@ config_logging(logging, logging.DEBUG)
 DEFAULT_PROGRAM_MODE = 'BACKTEST'
 START_DATE = datetime.datetime(2025, 4, 10, 10, 44,0)
 END_DATE = datetime.datetime(2025, 4, 10, 15, 45, 0)
-TRADE_LOG_FILE = r"bot\results\TradesLogFile.txt"
+TRADE_LOG_FILE = r"bot/results/TradesLogFile.txt"
 KLINE_TYPE = '1m'
 LIST_TICKERS = load_tickers_if_empty()
 DURATION_TIME = 43200

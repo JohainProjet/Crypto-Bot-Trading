@@ -11,7 +11,7 @@ pd.set_option('display.float_format', lambda x: '%.10f' % x)
 
 def load_tickers_if_empty(list_tickers=[]):
     if not list_tickers:
-        with open(r"bot\data\list_all_pairs.txt", 'r', encoding='utf-8') as f:
+        with open(r"bot/data/list_all_pairs.txt", 'r', encoding='utf-8') as f:
             list_tickers = f.read().splitlines()
     return list_tickers
 
@@ -213,7 +213,7 @@ class Portfolio:
         )
 
     def save(self, start_date, current_cash, assets_value):
-        with open(r'bot\results\results.txt', 'a', encoding='utf-8') as f:
+        with open(r'bot/results/results.txt', 'a', encoding='utf-8') as f:
             f.write(f"Start Date : {start_date} |"
                     f"End Date : {datetime.datetime.now()} |"
                     f"Cash : {current_cash} |",
