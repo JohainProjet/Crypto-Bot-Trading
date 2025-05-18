@@ -5,15 +5,15 @@ from bot.strategy.pump_dump import PumpDump
 from bot.utils.helpers import Parameters, Portfolio, generate_parameters_combinaison, load_tickers_if_empty
 from bot.trading.base_trading import SimulationSaver
 
-config_logging(logging, logging.INFO)
+config_logging(logging, logging.DEBUG)
 
 
 DEFAULT_PROGRAM_MODE = 'BACKTEST'
-START_DATE = datetime.datetime(2025, 5, 1, 19, 0,0)
-END_DATE = datetime.datetime(2025, 5, 1, 22, 0, 0)
+START_DATE = datetime.datetime(2025, 4, 10, 10, 44,0)
+END_DATE = datetime.datetime(2025, 4, 10, 15, 45, 0)
 TRADE_LOG_FILE = r"bot\results\TradesLogFile.txt"
 KLINE_TYPE = '1m'
-LIST_TICKERS = load_tickers_if_empty([])
+LIST_TICKERS = load_tickers_if_empty()
 DURATION_TIME = 43200
 STD_ROLLING_SIZE = 100 #Used to clean position
 MEAN_ROLLING_SIZE = 100 #Used to clean position
@@ -41,7 +41,6 @@ def main(simulation_saver : SimulationSaver, params : Parameters):
 
     performance = cash + assets_value
     return performance
-
 
 def objective(trial):
     """Définit la fonction de coût pour Optuna."""

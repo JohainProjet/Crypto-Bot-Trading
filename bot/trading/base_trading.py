@@ -160,5 +160,5 @@ class TradingManager(ABC):
 		print('-------------------')
 		print('Transaction history :')
 		print(self.portfolio.df_transaction_history)
-		if self.parameters.program_type == 'BACKTEST':
-			self.simulation_saver.update_portfolio_in_db(self.portfolio, self.parameters, timestamp)
+		#if self.parameters.program_type == 'BACKTEST':
+		#	self.simulation_saver.update_portfolio_in_db(self.portfolio, self.parameters, timestamp)

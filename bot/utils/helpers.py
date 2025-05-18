@@ -9,7 +9,7 @@ from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
 
 pd.set_option('display.float_format', lambda x: '%.10f' % x)
 
-def load_tickers_if_empty(list_tickers):
+def load_tickers_if_empty(list_tickers=[]):
     if not list_tickers:
         with open(r"bot\data\list_all_pairs.txt", 'r', encoding='utf-8') as f:
             list_tickers = f.read().splitlines()
@@ -241,7 +241,7 @@ class Portfolio:
             #Ca doit sûrement update et mettre les prix usdt dans current_price alors que c'est pas du tout ce qu'on veut puisqu'ils sont en try btc
 
 
-    def fetch_prices(self, timestamp = None):
+    def fetch_prices(self, timestamp = None, dict_global_time = None):
         if self.program_type in ['PROD', 'TEST']:
             try:
                 binance_get_price_api_client = SpotWebsocketAPIClient(on_message=self.message_api)
@@ -253,7 +253,6 @@ class Portfolio:
                 print(f"Prix non récupéré : {e}")
         else:
             list_tickers = list(self.actifs.keys())
-            dict_global_time = self.get_dict_global_times()
             for pair in list_tickers:
                 self.update_current_price([
                     binary_search_get_price(
@@ -265,10 +264,10 @@ class Portfolio:
     @staticmethod
     def get_dict_global_times():
         from bot.trading.backtesting import Datas
-        return Datas.dict_global
+        return Datas.data_manager.dict_global
 
-    def get_assets_value(self, timestamp = None):
-        self.fetch_prices(timestamp)
+    def get_assets_value(self, timestamp = None, dict_global_time = None):
+        self.fetch_prices(timestamp, dict_global_time)
         assets_value = 0
         for pair, dict_ in self.actifs.items():
             quote_asset = self.get_quoted_asset(pair)
@@ -277,8 +276,8 @@ class Portfolio:
             assets_value += dict_['quantity'] * ticker_price_usdt
         return assets_value
 
-    def evaluate_portfolio_value(self, timestamp = None, save_to_file = False, verbose = True):
-        assets_value = self.get_assets_value(timestamp)
+    def evaluate_portfolio_value(self, timestamp = None, dict_global_time = None, save_to_file = False, verbose = True):
+        assets_value = self.get_assets_value(timestamp, dict_global_time)
         portfolio_value = self.current_cash+assets_value
         if verbose:
             print('---------------')
