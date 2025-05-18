@@ -33,7 +33,7 @@ print(len(ranges))
 count_nb_of_messages = 0
 class DataManager:
     def __init__(self):
-        self.path = r'bot\data\historical_datas_from_api'
+        self.path = r'bot/data/historical_datas_from_api'
         self.klines : dict = {}
         self.rolling_window = {}
         self.kline_write_counter = {}
@@ -367,7 +367,7 @@ list_rolling_real = []
 
 
 count_test_lines = 0
-with open(r'bot\data\historical_datas\mini_ticker\DOGEUSDT.txt', 'r') as f:
+with open(r'bot/data/historical_datas/mini_ticker/DOGEUSDT.txt', 'r') as f:
     for line in f:
         message = json.loads(line)
         x = datetime.datetime.fromtimestamp(message['data']['E'] / 1000)
@@ -375,7 +375,7 @@ with open(r'bot\data\historical_datas\mini_ticker\DOGEUSDT.txt', 'r') as f:
         list_rolling_test.append((x, y))
         count_test_lines+=1
 
-with open(r'bot\data\historical_datas_from_api\mini_ticker\DOGEUSDT.txt', 'r') as f:
+with open(r'bot/data/historical_datas_from_api/mini_ticker/DOGEUSDT.txt', 'r') as f:
     for line in f:
         if count_test_lines == 0:
             break
