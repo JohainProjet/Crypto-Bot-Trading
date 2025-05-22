@@ -216,7 +216,7 @@ class MessageHandler:
 
     @staticmethod
     def save_datas(message):
-        path = r'bot\data\historical_datas'
+        path = r'bot/data/historical_datas'
         if 'kline' in message['stream']:
             with open(
                 os.path.join(path, 'kline1m', message['data']['s'] + '.txt'),
