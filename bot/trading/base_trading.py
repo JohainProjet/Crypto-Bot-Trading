@@ -23,7 +23,6 @@ class SimulationSaver:
 		portfolio_values = json.dumps([cash])
 		volume, variation, nb_of_trades = parameters.limits.values()
 		stop_loss = parameters.stop_loss_prct
-		kline_type = parameters.kline_type
 		cursor.execute('''
 			INSERT OR IGNORE INTO Results (
 				simulation_type,
@@ -36,9 +35,8 @@ class SimulationSaver:
 				variation,
 				nb_of_trades,
 				stop_loss,
-				kline_type
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		''', (
 			simulation_type,
 			start_date,
@@ -50,7 +48,6 @@ class SimulationSaver:
 			variation,
 			nb_of_trades,
 			stop_loss,
-			kline_type
 		))
 		conn.commit()
 
@@ -62,7 +59,6 @@ class SimulationSaver:
 		portfolio_value = cash + asset_value
 		volume, variation, nb_of_trades = parameters.limits.values()
 		stop_loss = parameters.stop_loss_prct
-		kline_type = parameters.kline_type
 
 		cursor.execute('''
 			SELECT Portfolio_values
@@ -74,7 +70,6 @@ class SimulationSaver:
 			AND variation = ?
 			AND nb_of_trades = ?
 			AND stop_loss = ?
-			AND kline_type = ?
 		''', (
 			parameters.program_type,
 			parameters.start_date,
@@ -82,8 +77,7 @@ class SimulationSaver:
 			volume,
 			variation,
 			nb_of_trades,
-			stop_loss,
-			kline_type
+			stop_loss
 		))
 		row = cursor.fetchone()
 
@@ -101,7 +95,6 @@ class SimulationSaver:
 			AND variation = ?
 			AND nb_of_trades = ?
 			AND stop_loss = ?
-			AND kline_type = ?
 		''', (
 			portfolio_values,
 			parameters.program_type,
@@ -110,8 +103,7 @@ class SimulationSaver:
 			volume,
 			variation,
 			nb_of_trades,
-			stop_loss,
-			kline_type
+			stop_loss
 		))
 
 		conn.commit()
@@ -119,11 +111,12 @@ class SimulationSaver:
 
 class TradingManager(ABC):
 	def __init__(self, parameters : Parameters, portfolio : Portfolio, simulation_saver : SimulationSaver):
-		self.api_key, self.api_secret = get_api_keys(environnement=parameters.program_type)
+		program_type = parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
+		self.api_key, self.api_secret = get_api_keys(environnement=program_type)
 		self.portfolio = portfolio
 		self.parameters = parameters
-		if self.parameters.program_type == 'BACKTEST':
-			simulation_saver.save_to_db(self.portfolio, self.parameters)
+		#if program_type == 'BACKTEST':
+		#	simulation_saver.save_to_db(self.portfolio, self.parameters)
 		self.simulation_saver = simulation_saver
 
 	@abstractmethod
@@ -154,7 +147,7 @@ class TradingManager(ABC):
 			elapsed_time += interval
 			remaining_time = total_duration - elapsed_time
 			print(f"Temps écoulé : {elapsed_time} s. Temps restant : {remaining_time} secondes.")
-			self.screenshot(timestamp)
+			#self.screenshot(timestamp)
 
 	def screenshot(self, timestamp = None):
 		print('-------------------')

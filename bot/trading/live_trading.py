@@ -5,7 +5,6 @@ import json
 import logging
 import pprint
 import threading
-from typing import List
 from binance.spot import Spot as Client
 from binance.websocket.spot.websocket_stream import SpotWebsocketStreamClient
 from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
@@ -26,16 +25,17 @@ class LiveTrading(TradingManager):
         return None
 
     def start(self):
-        list_ticker_kline = [ticker.lower()+f'@kline_{self.parameters.kline_type}' for ticker in self.parameters.list_tickers if ticker.endswith('USDT')]
-        list_ticker_rolling1h = [ticker.lower()+'@ticker_1h' for ticker in self.parameters.list_tickers if ticker.endswith('USDT')]
-        list_ticker_price_update = [ticker.lower()+'@miniTicker' for ticker in self.parameters.list_tickers if not ticker.endswith('USDT')]
+        list_tickers : list[str] = self.parameters.GLOBAL_PARAMETERS["LIST_TICKERS"]
+        list_ticker_kline = [ticker.lower()+f'@kline_1m' for ticker in list_tickers if ticker.endswith('USDT')]
+        list_ticker_rolling1h = [ticker.lower()+'@ticker_1h' for ticker in list_tickers if ticker.endswith('USDT')]
+        list_ticker_price_update = [ticker.lower()+'@miniTicker' for ticker in list_tickers if not ticker.endswith('USDT')]
 
         self.websocket_manager.ws_client_kline.subscribe(stream = list_ticker_kline)
         self.websocket_manager.ws_client_rolling_1h.subscribe(stream = list_ticker_rolling1h)
         self.websocket_manager.ws_client_mini_ticker.subscribe(stream = list_ticker_price_update)
 
         logging.info('start sleep')
-        self.periodic_sleep(self.parameters.duration_time, 300)
+        self.periodic_sleep(self.parameters.GLOBAL_PARAMETERS['DURATION_TIME'], 300)
         self.stop()
 
     def stop(self):
@@ -60,11 +60,12 @@ class LiveTrading(TradingManager):
                                                         newClientOrderId=f'stop_loss_{ticker}',
                                                         newOrderRespType="FULL")
 
-    def get_open_orders_and_cancel(self):
+    def get_open_orders_and_cancel(self)->None:
+        program_type : str = self.parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
         stream_url = None
-        if self.parameters.program_type == 'TEST':
+        if program_type == 'TEST':
             stream_url="wss://ws-api.testnet.binance.vision/ws-api/v3"
-        elif self.parameters.program_type == 'PROD':
+        elif program_type == 'PROD':
             stream_url = "wss://ws-api.binance.com:443/ws-api/v3"
 
         client = SpotWebsocketAPIClient(
@@ -76,6 +77,7 @@ class LiveTrading(TradingManager):
         client.get_open_orders()
         time.sleep(15)
         client.stop()
+        return None
 
     def buy(self, ticker, quote_order_qty, excecuted_price=0, time_=0):
         return self.websocket_manager.ws_api_client.new_order(symbol=ticker,
@@ -101,7 +103,7 @@ class LiveTrading(TradingManager):
 
 class WebsocketManager:
     def __init__(self, parameters, api_key, api_secret):
-        self.program_type = parameters.program_type
+        self.program_type = parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
         self.api_key = api_key
         self.api_secret = api_secret
         self.message_handler : MessageHandler = MessageHandler(None)
@@ -207,7 +209,7 @@ class MessageHandler:
         if message.get('result',0) is None:
             print(f'Connection open at {datetime.datetime.now()} with websocket kline.')
             return None
-        self.pump_and_dump.update_parameters(self.pump_and_dump.parameters.kline_type, message['data']['k'])
+        self.pump_and_dump.update_parameters('1m', message['data']['k'])
         self.pump_and_dump.take_decision(message['data'])
         self.save_datas(message)
         return None

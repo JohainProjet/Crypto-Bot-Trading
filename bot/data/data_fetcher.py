@@ -46,7 +46,7 @@ def main():
     list_ticker_rolling1h_usdt = [ticker.lower()+'@ticker_1h' for ticker in listTickers_usdt if ticker.endswith('USDT')]
 
     list_mini_ticker = [ticker.lower()+'@miniTicker' for ticker in listTickers_usdt if not ticker.endswith('USDT')]
-
+    #Used to get the price of ticker without USDT
     stream_url = "wss://stream.binance.com:9443"
     websocket_1m = SpotWebsocketStreamClient(stream_url=stream_url,
                                              on_message=messageProcessingkline1m,

@@ -1,12 +1,9 @@
 import os
 import datetime
-import json
 import time
-from pympler.tracker import SummaryTracker
-
-from tqdm import tqdm
 import pandas as pd
 import zipfile
+from tqdm import tqdm
 from collections import defaultdict, deque
 from binance.spot import Spot as Client
 from bot.trading.base_trading import TradingManager
@@ -15,10 +12,10 @@ from bot.strategy.base_strategy import Strategy
 class BackTesting(TradingManager):
     def __init__(self, parameters, portfolio, simulation_saver):
         super().__init__(parameters,  portfolio, simulation_saver)
-        self.list_tickers = parameters.list_tickers
+        self.list_tickers = parameters.GLOBAL_PARAMETERS['LIST_TICKERS']
         self.parameters = parameters
         self.datas = Datas(parameters)
-        self.orders = {}
+        self.orders : dict[dict[str,float]]= {} #Only ticker+USDT
 
     def set_pump_and_dump(self, pump_and_dump):
         self.pump_and_dump = pump_and_dump
@@ -44,21 +41,16 @@ class BackTesting(TradingManager):
             print(f'Connection open at {datetime.datetime.now()} with websocket kline.')
             return None
         data = message['data']
-        ticker :str = data['k']['s']
-        self.datas.strategy.update_parameters(self.parameters.kline_type, data['k'])
+        current_pair = data['k']['s']
+        self.datas.strategy.update_parameters('1m', data['k'])
         self.datas.strategy.take_decision(data)
 
-        matching_key = next((key for key in self.orders.keys() if key.startswith(ticker[:-4])), None)
-        k = data['k']['s']
-        if matching_key:
-            self.check_stop_losses(matching_key, data)
+        for pair in self.orders:
+            if pair.startswith(current_pair[:-4]):
+                self.check_stop_losses(pair, data)
+                break
         return None
     
-        #{"stream": "1000catusdc@miniTicker", 
-        # "data": {"e": "24hrMiniTicker", "E": 1745921398902, "s": "1000CATUSDC", 
-        # "c": "0.00714000", "o": "0.00728000", "h": "0.00750000", "l": "0.00685000", 
-        # "v": "14210343.70000000", "q": "102270.93361700"}}
-
     def message_processing_mini_ticker_back_testing(self, message):
         if message.get('result',0) is None:
             print(f'Connection open at {datetime.datetime.now()} with mini ticker.')
@@ -68,36 +60,41 @@ class BackTesting(TradingManager):
         return None
 
     def generate_list_month(self):
-        current = datetime.datetime(self.parameters.start_date.year, self.parameters.start_date.month, 1)
-        end_month = datetime.datetime(self.parameters.end_date.year, self.parameters.end_date.month, 1)
+        start_date : datetime.datetime = self.parameters.GLOBAL_PARAMETERS['START_DATE']
+        end_date : datetime.datetime = self.parameters.GLOBAL_PARAMETERS['END_DATE']
+        current = datetime.datetime(start_date.year, start_date.month, 1)
+        end_month = datetime.datetime(end_date.year, end_date.month, 1)
 
         month_list = [i.strftime("%Y-%m") for i in pd.date_range(start=current, end=end_month, freq='MS')]
         return month_list
 
-    def start(self):
+    def start(self)->None:
         list_months = self.generate_list_month()
         for month in tqdm(list_months):
             gen_sorted_items = self.datas.fill_dict_time(month)
-            for sorted_items in gen_sorted_items:
-                if len(sorted_items.keys()) == 0:
-                    continue
-                time_reference = list(sorted_items.keys())[0]
-                print(time_reference)
-                for current_time, list_events in sorted_items.items():
-                    if current_time - time_reference >= datetime.timedelta(minutes=30):
-                        self.screenshot(current_time)
-                        time_reference = current_time
-                    for event in list_events:
-                        if 'kline' in event['stream']:
-                            self.message_processing_kline_back_testing(event)
-                        elif 'ticker' in event['stream']:
-                            self.message_processing_rolling_back_testing(event)
-                        elif 'miniTicker' in event['stream']:
-                            self.message_processing_mini_ticker_back_testing(event)
+            try:
+                for sorted_items in gen_sorted_items:
+                    if len(sorted_items.keys()) == 0:
+                        continue
+                    time_reference = list(sorted_items.keys())[0]
+                    #print(time_reference)
+                    for current_time, list_events in sorted_items.items():
+                        if current_time - time_reference >= datetime.timedelta(minutes=30):
+                            self.screenshot(current_time)
+                            time_reference = current_time
+                        for event in list_events:
+                            if 'kline' in event['stream']:
+                                self.message_processing_kline_back_testing(event)
+                            elif 'ticker' in event['stream']:
+                                self.message_processing_rolling_back_testing(event)
+                            elif 'miniTicker' in event['stream']:
+                                self.message_processing_mini_ticker_back_testing(event)
+                    self.portfolio.evaluate_portfolio_value()
+            except EndOfBacktest:
+                self.stop()
+                return None
+        return None
 
-                last_time = list(sorted_items.keys())[-1]
-                self.portfolio.evaluate_portfolio_value(last_time, self.datas.data_manager)
-        self.stop()
 
     def stop(self):
         with open(r"bot\results\TradesLogFile.txt", "a", encoding='utf-8') as f:
@@ -116,7 +113,7 @@ class BackTesting(TradingManager):
                                         executed_qty,
                                         excecuted_price)
         self.datas.strategy.define_stop_losses(ticker, excecuted_price)
-        print(self.portfolio.df_transaction_history)
+        #print(self.portfolio.df_transaction_history)
 
     def cancel_replace(self, pair : str, quantity_bought, new_stop_loss_price):
         self.place_stop_loss(pair, quantity_bought, new_stop_loss_price)
@@ -139,7 +136,7 @@ class BackTesting(TradingManager):
                 del self.orders[ticker]
             except ValueError:
                 return
-            print(self.portfolio.df_transaction_history)
+            #print(self.portfolio.df_transaction_history)
 
 
 class DataManager:
@@ -365,8 +362,8 @@ class DataManager:
                                 'data' : data}
             time_ = datetime.datetime.fromtimestamp(E/1000)
             self.dict_time[time_].append(full_kline)
-        """ with open(os.path.join(self.path, 'historical_window_1h', symbol + '.txt'), 'a') as f:
-            f.write(json.dumps(full_kline)+ '\n') """
+            """ with open(os.path.join(self.path, 'historical_window_1h', symbol + '.txt'), 'a') as f:
+                f.write(json.dumps(full_kline)+ '\n') """
 
     def update_mini_ticker(self, k_1s):
         symbol = k_1s['s']
@@ -385,7 +382,7 @@ class DataManager:
         full_kline = {'stream' : symbol.lower()+'@miniTicker',
                         'data' : data}
         self.mini_ticker[symbol] = full_kline
-        if symbol in self.window_ready:
+        if symbol[:-4]+'USDT' in self.window_ready:
             time_ = datetime.datetime.fromtimestamp(E/1000)
             self.dict_time[time_].append(self.mini_ticker[symbol])
             """ with open(os.path.join(self.path, 'mini_ticker', symbol + '.txt'), 'a') as f:
@@ -417,11 +414,25 @@ class DataManager:
             raise FileNotFoundError("Aucun fichier .csv ou .csv.gz trouvé dans le zip.")
         return file_path
 
-    def process_dataframe(self, ticker, df):
+    def process_dataframe(self, start_date : str, end_date : str, ticker : str, df : pd.DataFrame) -> bool:
         """
-        Lit le DataFrame ligne par ligne et crée un dictionnaire par ligne.
-        Retourne une liste de dictionnaires.
+        Read the dataframe and process it to create the kline
+        Args:
+            start_date (int): Start date of the data in timestamp UTC
+            end_date (int): End date of the data in timestamp UTC
+            ticker (str): Ticker name
+            df (pd.DataFrame): Dataframe to process
+        Returns:
+            bool: True if the first date is greater than the end date (end of backtest), False otherwise
         """
+        if df['E'].iloc[0] > end_date:
+            return True
+        
+        df : pd.DataFrame = df[(df['E'] >= start_date) & (df['E'] <= end_date)].copy()
+
+        if df.empty:
+            return False
+
         df["t"] = df["t"] // 1000
         df["E"] = df["E"] // 1000
         df['T'] = df['t'].astype(int) + 59999
@@ -430,22 +441,15 @@ class DataManager:
         df["L"] = None
         df["x"] = "false"
         df["s"] = ticker
-        moyenne_update_rolling = []
-        moyenne_update_klines = []
+        print(datetime.datetime.fromtimestamp(int(df["E"].iloc[0]/1000)))
         for kline in df.to_dict(orient='records'):
-            #kline = self.create_kline_1s(ticker, row)
             if ticker.endswith('USDT'):
-                t1 = time.time()
                 self.update_rolling_window(kline)
-                moyenne_update_rolling.append(time.time()-t1)
-                t1 = time.time()
                 self.update_klines(kline)
-                moyenne_update_klines.append(time.time()-t1)
             else:
                 self.update_mini_ticker(kline)
-        if moyenne_update_klines and moyenne_update_rolling:
-            print('rolling_mean', sum(moyenne_update_rolling)/len(moyenne_update_rolling))
-            print('klines_mean', sum(moyenne_update_klines)/len(moyenne_update_klines))
+        return False
+    
 
 class Datas:
     path_ = r'bot\data\historical_datas'
@@ -454,24 +458,27 @@ class Datas:
     path_files_mini_ticker = []
     end_of_the_file = False
     COLUMNS_NAMES = ["t", "o", "h", "l", "c", "v", "E", "q", "n", "V", "Q", "B"]
-    def __init__(self, parameters, strategy = None):
-        self.list_tickers = parameters.list_tickers
+    def __init__(self, parameters, strategy=None):
+        self.list_tickers: list[str] = parameters.GLOBAL_PARAMETERS['LIST_TICKERS']
         self.strategy = strategy
-        self.start_date : datetime.datetime = parameters.start_date
-        self.end_date : datetime.datetime = parameters.end_date
-        self.data_manager  : DataManager = DataManager()
+        self.start_date: datetime.datetime = parameters.GLOBAL_PARAMETERS['START_DATE']
+        self.end_date: datetime.datetime = parameters.GLOBAL_PARAMETERS['END_DATE']
+        self.data_manager: DataManager = DataManager()
         if not Datas.path_files_klines:
-            Datas.path_files_klines = [os.path.join(Datas.path_,
-                                                    f'kline{parameters.kline_type}',
-                                                    f'{ticker}.txt') for ticker in parameters.list_tickers if ticker.endswith('USDT')]
+            Datas.path_files_klines = [
+                os.path.join(Datas.path_, 'kline1m', f'{ticker}.txt')
+                for ticker in self.list_tickers if ticker.endswith('USDT')
+            ]
         if not Datas.path_files_rolling:
-            Datas.path_files_rolling = [os.path.join(Datas.path_,
-                                                     'historical_window_1h',
-                                                     f'{ticker}.txt') for ticker in parameters.list_tickers if ticker.endswith('USDT')]
+            Datas.path_files_rolling = [
+                os.path.join(Datas.path_, 'historical_window_1h', f'{ticker}.txt')
+                for ticker in self.list_tickers if ticker.endswith('USDT')
+            ]
         if not Datas.path_files_mini_ticker:
-            Datas.path_files_mini_ticker = [os.path.join(Datas.path_,
-                                                     'mini_ticker',
-                                                     f'{ticker}.txt') for ticker in parameters.list_tickers if not ticker.endswith('USDT')]
+            Datas.path_files_mini_ticker = [
+                os.path.join(Datas.path_, 'mini_ticker', f'{ticker}.txt')
+                for ticker in self.list_tickers if not ticker.endswith('USDT')
+            ]
 
     def set_strategy(self, strategy : Strategy):
         self.strategy = strategy
@@ -489,42 +496,29 @@ class Datas:
 
     def generate_list_month(self):
         
-        current = datetime(self.start_date.year, self.start_date.month, 1)
-        end_month = datetime(self.end_date.year, self.end_date.month, 1)
+        current = datetime.datetime(self.start_date.year, self.start_date.month, 1)
+        end_month = datetime.datetime(self.end_date.year, self.end_date.month, 1)
 
         month_list = [i.strftime("%Y-%m") for i in pd.date_range(start=current, end=end_month, freq='MS')]
         return month_list
-    
+
     def fill_dict_time(self, month):
-        
-        start_time = 1735689600000
-        end_time = 	1745971199000
-
-        #On découpe en intervalles de 999_000 millisecondes
-        interval = 1_000_000
-        ranges = []
-        current = start_time
-        while current < end_time:
-            next_time = min(current + interval, end_time)
-            ranges.append((current, next_time))
-            current = next_time
-        
-
         print(f"\n Traitement du mois : {month}")
-        
+
+        start_date_timestamp = int(self.start_date.timestamp() * 1_000_000)
+        end_date_timestamp = int(self.end_date.timestamp() * 1_000_000)
 
         generators = []
 
-        for i, symbol in enumerate(self.list_tickers[:100]):
+        for i, symbol in enumerate(['EGLDUSDT', 'EGLDUSDC']):
             file_path = self.build_path(symbol, month)
             file_path_csv = self.data_manager.extract_zip_stream(file_path)
-            gen = pd.read_csv(file_path_csv, chunksize=10000, compression='infer', names = self.COLUMNS_NAMES)
+            gen = pd.read_csv(file_path_csv, chunksize=1_000, compression='infer', names = self.COLUMNS_NAMES)
             generators.append((symbol, gen))
             print(i)
 
-        # Lecture par chunks de 1000 lignes
+        #Lecture par chunks de 1000 lignes
         while True:
-            t1 = time.time()
             all_exhausted = True
             chunks = []
 
@@ -538,7 +532,7 @@ class Datas:
 
             if all_exhausted:
                 print("Tous les fichiers de ce mois ont été traités.")
-                break
+                raise EndOfBacktest()
 
             # Traitement des chunks du mois en cours
             # Chaque chunk représente 1000 lignes d'un ticker
@@ -546,16 +540,17 @@ class Datas:
             count= 0
             for symbol, chunk in chunks:
                 count+=1
-                print(count)
                 if chunk is not None:
-                    self.data_manager.process_dataframe(symbol, chunk)
-                    # process_chunk(chunk, symbol, month)
-            t1b = time.time()
+                    should_stop = self.data_manager.process_dataframe(start_date_timestamp, end_date_timestamp, symbol, chunk)
+                    if should_stop:
+                        raise EndOfBacktest()
             sorted_items = dict(sorted(self.data_manager.dict_time.items(), key=lambda item: item[0]))
-            
-            t2 = time.time()
-            print('sorted_time', t2 - t1b)
-            print()
-            print(len(sorted_items))
-            print("Temps pris pour former le dicitonnaire :", t2-t1)
+
+            #print()
+            #print(len(sorted_items))
+            #print("Temps pris pour former le dicitonnaire :", t2-t1)
             yield sorted_items
+
+
+class EndOfBacktest(Exception):
+    pass
