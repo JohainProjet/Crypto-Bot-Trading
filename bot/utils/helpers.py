@@ -7,7 +7,6 @@ import pandas as pd
 from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
 
 
-
 pd.set_option('display.float_format', lambda x: '%.10f' % x)
 
 def load_tickers(list_tickers=[]):
@@ -20,8 +19,6 @@ def load_tickers(list_tickers=[]):
 class Parameters:
     GLOBAL_PARAMETERS : dict = field(default_factory=dict)
     SPECIFIC_PARAMETERS : dict = field(default_factory=dict)
-    ticker_bought_actual_max_price : dict = field(default_factory=dict)
-    crypto_bought :  dict = field(default_factory=dict)
 
 class Portfolio:
     def __init__(self, program_type : str, cash : float, actifs : dict = {}):
@@ -184,7 +181,6 @@ class Portfolio:
         )
         return None
 
-
     def save(self, start_date, current_cash, assets_value):
         with open(r'bot/results/results.txt', 'a', encoding='utf-8') as f:
             f.write(f"Start Date : {start_date} |"
@@ -343,9 +339,6 @@ TRADING_PAIRS = {'1000CAT': {'USDC', 'TRY', 'USDT'},
 					'ETC': {'TRY', 'BTC', 'USDT'},
 					'ETH': {'USDC', 'TRY', 'BTC', 'USDT'},
 					'ETHFI': {'USDC', 'TRY', 'USDT'},
-					'EUR': {'USDC', 'USDT'},
-					'EURI': {'USDC', 'USDT'},
-					'FDUSD': {'USDC', 'TRY', 'USDT'},
 					'FET': {'USDC', 'TRY', 'BTC', 'USDT'},
 					'FIDA': {'TRY', 'BTC', 'USDT'},
 					'FIL': {'USDC', 'TRY', 'BTC', 'USDT'},
@@ -579,6 +572,20 @@ TRADING_PAIRS = {'1000CAT': {'USDC', 'TRY', 'USDT'},
 					'ZRO': {'USDC', 'TRY', 'BTC', 'USDT'},
 					'ZRX': {'BTC', 'USDT'}}
 
+
+PAIRS_FOR_BACKTEST = ['ETHUSDT', 'LTCUSDT', 'ZILUSDT', 'BTCUSDT', 'THETAUSDC', 'USDCTRY', 'LINKUSDC', 'ETHUSDC', 
+                      'REQBTC', 'XLMUSDT', 'SYSUSDT', 'POWRUSDT', 'ATOMUSDC', 'KNCUSDT', 'VETUSDC', 'MANATRY', 
+                      'PIVXUSDT', 'ONTUSDC', 'RLCBTC', 'ONGUSDT', 'GASTRY', 'KMDUSDT', 'ONGBTC', 'STORJTRY', 
+                      'ADAUSDT', 'HOTUSDT', 'MANAUSDT', 'DATABTC', 'RVNTRY', 'ZILTRY', 'ICXUSDT', 'EOSUSDT', 
+                      'XRPUSDC', 'FETUSDC', 'LSKUSDT', 'SYSBTC', 'KMDBTC', 'VETUSDT', 'ARDRBTC', 'BTCUSDC', 
+                      'PHBTRY', 'TRXUSDC', 'THETAUSDT', 'DASHBTC', 'LRCUSDT', 'BATUSDT', 'IOTXUSDT', 'GASUSDT',
+                      'HOTTRY', 'ZECUSDT', 'ZENUSDT', 'ZENUSDC', 'IOTAUSDT', 'EOSUSDC', 'IOTAUSDC', 'ZRXBTC', 
+                      'ZECBTC', 'REQUSDT', 'PIVXBTC', 'ETCUSDT', 'STEEMUSDT', 'ONTUSDT', 'ADAUSDC', 'ADXBTC', 
+                      'KNCBTC', 'ZRXUSDT', 'IOTXBTC', 'MTLBTC', 'NEOUSDT', 'ATOMUSDT', 'TRXUSDT', 'ENJUSDT', 
+                      'ARDRUSDT', 'ADXUSDT', 'MTLUSDT', 'XLMUSDC', 'NEOUSDC', 'RLCUSDT', 'QTUMTRY', 'DATAUSDT', 
+                      'BNBUSDT', 'QTUMUSDT', 'BATBTC', 'LINKUSDT', 'BNBUSDC', 'POWRBTC', 'PHBUSDT', 'ETCTRY', 
+                      'LRCTRY', 'LTCUSDC', 'DASHUSDT', 'STORJUSDT', 'XRPUSDT', 'LSKBTC', 'ICXBTC', 'WANBTC', 
+                      'RVNUSDT', 'ENJTRY', 'WANUSDT', 'FETUSDT', 'STEEMUSDC']
 
 def generate_parameters_combinaison():
     list_parameters = []

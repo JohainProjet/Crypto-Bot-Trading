@@ -9,9 +9,9 @@ from bot.trading.base_trading import SimulationSaver
 
 config_logging(logging, logging.INFO)
 
-DEFAULT_PROGRAM_MODE = 'PROD'
-START_DATE = datetime.datetime(2025, 4, 1, 0, 44,0, tzinfo=pytz.utc)
-END_DATE = datetime.datetime(2025, 4, 1, 15, 45, 0, tzinfo=pytz.utc)
+DEFAULT_PROGRAM_MODE = 'BACKTEST'
+START_DATE = datetime.datetime(2025, 4, 1, 0, 0,0, tzinfo=pytz.utc)
+END_DATE = datetime.datetime(2025, 4, 1, 23, 59, 0, tzinfo=pytz.utc)
 
 LIST_TICKERS = load_tickers()
 DURATION_TIME = 43200
@@ -28,7 +28,7 @@ GLOBAL_PARAMETERS = {'DEFAULT_PROGRAM_MODE' : DEFAULT_PROGRAM_MODE,
                      }
 
 def main(parameters : Parameters, simulation_saver : SimulationSaver)->float:
- 
+
     portfolio = Portfolio(DEFAULT_PROGRAM_MODE, 500, {})
 
     logging.info("Lancement de la stratégie avec les paramètres suivants : %s", parameters.SPECIFIC_PARAMETERS)
@@ -52,7 +52,7 @@ def objective(trial)-> float:
 
     Args:
         trial object from optuna library
-    
+
     Returns:
         float: Value of the portfolio at the end of the simulation.
     """
@@ -63,9 +63,10 @@ def objective(trial)-> float:
     second_check_volume = trial.suggest_float('volume2', 0.01, 0.2)
     second_check_nb_of_trades = trial.suggest_float('nb_of_trades2', 0.01, 0.2)
 
-    stop_loss_prct = trial.suggest_float("stop_loss", 0.95, 0.99)
-    stop_loss_adjust_stop_loss = trial.suggest_float("stop_loss_adjust", 0.97, 0.998)
-
+    stop_loss_prct = trial.suggest_float("stop_loss", 0.99, 0.995)
+    #stop_loss_adjust_stop_loss = trial.suggest_float("stop_loss_adjust", 0.97, 0.998)
+    stop_loss_prct = 0.99
+    stop_loss_adjust_stop_loss = 0.995
     SPECIFIC_PARAMETERS = {'first_check_volume': first_check_volume, 
             'first_check_variation': first_check_variation, 
             'first_check_nb_of_trades': first_check_nb_of_trades,

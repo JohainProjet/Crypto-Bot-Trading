@@ -8,6 +8,8 @@ from collections import defaultdict, deque
 from binance.spot import Spot as Client
 from bot.trading.base_trading import TradingManager
 from bot.strategy.base_strategy import Strategy
+from bot.utils.helpers import PAIRS_FOR_BACKTEST
+
 
 class BackTesting(TradingManager):
     def __init__(self, parameters, portfolio, simulation_saver):
@@ -50,7 +52,7 @@ class BackTesting(TradingManager):
                 self.check_stop_losses(pair, data)
                 break
         return None
-    
+
     def message_processing_mini_ticker_back_testing(self, message):
         if message.get('result',0) is None:
             print(f'Connection open at {datetime.datetime.now()} with mini ticker.')
@@ -69,6 +71,7 @@ class BackTesting(TradingManager):
         return month_list
 
     def start(self)->None:
+        t1=time.time()
         list_months = self.generate_list_month()
         for month in tqdm(list_months):
             gen_sorted_items = self.datas.fill_dict_time(month)
@@ -91,6 +94,7 @@ class BackTesting(TradingManager):
                                 self.message_processing_mini_ticker_back_testing(event)
                     self.portfolio.evaluate_portfolio_value()
             except EndOfBacktest:
+                print(time.time()-t1)
                 self.stop()
                 return None
         return None
@@ -102,17 +106,17 @@ class BackTesting(TradingManager):
             self.portfolio.df_transaction_history.to_string(f, index=True)
             f.write("\n\n")
 
-    def buy(self, ticker, quote_order_qty, excecuted_price=0, time_=0):
+    def buy(self, pair, quote_order_qty, excecuted_price=0, time_=0):
         executed_qty = quote_order_qty/excecuted_price
-        step_size = self.get_ticker_tick_size(ticker)[0]
+        step_size = self.get_ticker_tick_size(pair)[0]
         executed_qty = round((executed_qty//step_size)*step_size,8)
         working_time_order = datetime.datetime.fromtimestamp(int(time_)/1000)
         self.portfolio.transaction_order('BUY',
                                         working_time_order,
-                                        ticker,
+                                        pair,
                                         executed_qty,
                                         excecuted_price)
-        self.datas.strategy.define_stop_losses(ticker, excecuted_price)
+        self.datas.strategy.define_stop_losses(pair, excecuted_price)
         #print(self.portfolio.df_transaction_history)
 
     def cancel_replace(self, pair : str, quantity_bought, new_stop_loss_price):
@@ -166,31 +170,18 @@ class DataManager:
         self.mini_ticker = {}
 
     def create_kline_1s(self, ticker, row):
-        """         
-        1 = t
-        2 = o
-        3 = h
-        4 = l
-        5 = c
-        6 = v
-        7 = T
-        8 = q
-        9 = n
-        10 = V
-        11 = Q 
-        """
-        t = row[1]//1000
-        o = row[2]
-        h = row[3]
-        l = row[4]
-        c = row[5]
-        v = row[6]
-        E = row[7]//1000
-        q = row[8]
-        n = row[9]
-        V = row[10]
-        Q = row[11]
-        B = row[12]
+        t = int(row[0]//1000)
+        o = row[1]
+        h = row[2]
+        l = row[3]
+        c = row[4]
+        v = row[5]
+        E = int(row[6]//1000)
+        q = row[7]
+        n = row[8]
+        V = row[9]
+        Q = row[10]
+        B = row[11]
 
         T = int(t + 59_999)
         k = {
@@ -198,7 +189,7 @@ class DataManager:
             'T': T,
             'E': E,
             's': ticker,
-            'i': '1m', 
+            'i': '1m',
             'f': None,
             'L': None,
             'o': o,
@@ -414,7 +405,12 @@ class DataManager:
             raise FileNotFoundError("Aucun fichier .csv ou .csv.gz trouvé dans le zip.")
         return file_path
 
-    def process_dataframe(self, start_date : str, end_date : str, ticker : str, df : pd.DataFrame) -> bool:
+    def process_dataframe(self,
+                          start_date : str,
+                          end_date : str,
+                          ticker : str,
+                          df : pd.DataFrame,
+                          num_cryptos_completed : int) -> int:
         """
         Read the dataframe and process it to create the kline
         Args:
@@ -423,32 +419,26 @@ class DataManager:
             ticker (str): Ticker name
             df (pd.DataFrame): Dataframe to process
         Returns:
-            bool: True if the first date is greater than the end date (end of backtest), False otherwise
+            num_cryptos_completed: True if the first date is greater than the end date (end of backtest), False otherwise
         """
         if df['E'].iloc[0] > end_date:
-            return True
+            num_cryptos_completed+=1
+            return num_cryptos_completed
         
         df : pd.DataFrame = df[(df['E'] >= start_date) & (df['E'] <= end_date)].copy()
 
         if df.empty:
-            return False
+            return num_cryptos_completed
 
-        df["t"] = df["t"] // 1000
-        df["E"] = df["E"] // 1000
-        df['T'] = df['t'].astype(int) + 59999
-        df["i"] = "1m"
-        df["f"] = None
-        df["L"] = None
-        df["x"] = "false"
-        df["s"] = ticker
-        print(datetime.datetime.fromtimestamp(int(df["E"].iloc[0]/1000)))
-        for kline in df.to_dict(orient='records'):
+        print(datetime.datetime.fromtimestamp(int((df["E"].iloc[0]-7_200_000)/1_000_000)))
+        for kline in df.values:
+            kline = self.create_kline_1s(ticker, kline)
             if ticker.endswith('USDT'):
                 self.update_rolling_window(kline)
                 self.update_klines(kline)
             else:
                 self.update_mini_ticker(kline)
-        return False
+        return num_cryptos_completed
     
 
 class Datas:
@@ -510,7 +500,7 @@ class Datas:
 
         generators = []
 
-        for i, symbol in enumerate(['EGLDUSDT', 'EGLDUSDC']):
+        for i, symbol in enumerate(PAIRS_FOR_BACKTEST):
             file_path = self.build_path(symbol, month)
             file_path_csv = self.data_manager.extract_zip_stream(file_path)
             gen = pd.read_csv(file_path_csv, chunksize=1_000, compression='infer', names = self.COLUMNS_NAMES)
@@ -537,12 +527,16 @@ class Datas:
             # Traitement des chunks du mois en cours
             # Chaque chunk représente 1000 lignes d'un ticker
             self.data_manager.dict_time = defaultdict(list) #On reset le dictionnaire des events avant chaque nouvelles 1000 lignes traitées
-            count= 0
+            num_cryptos_completed = 0
             for symbol, chunk in chunks:
-                count+=1
+                print(symbol)
                 if chunk is not None:
-                    should_stop = self.data_manager.process_dataframe(start_date_timestamp, end_date_timestamp, symbol, chunk)
-                    if should_stop:
+                    num_cryptos_completed = self.data_manager.process_dataframe(start_date_timestamp, 
+                                                                                end_date_timestamp, 
+                                                                                symbol, 
+                                                                                chunk,
+                                                                                num_cryptos_completed)
+                    if num_cryptos_completed == len(PAIRS_FOR_BACKTEST):
                         raise EndOfBacktest()
             sorted_items = dict(sorted(self.data_manager.dict_time.items(), key=lambda item: item[0]))
 
