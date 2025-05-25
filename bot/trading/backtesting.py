@@ -13,17 +13,17 @@ from bot.utils.helpers import PAIRS_FOR_BACKTEST
 
 class BackTesting(TradingManager):
     def __init__(self, parameters, portfolio, simulation_saver):
-        super().__init__(parameters,  portfolio, simulation_saver)
+        super().__init__(parameters, portfolio, simulation_saver)
         self.list_tickers = parameters.GLOBAL_PARAMETERS['LIST_TICKERS']
         self.parameters = parameters
         self.datas = Datas(parameters)
-        self.orders : dict[dict[str,float]]= {} #Only ticker+USDT
+        self.orders: dict[dict[str, float]] = {}  # Only ticker+USDT
 
     def set_pump_and_dump(self, pump_and_dump):
         self.pump_and_dump = pump_and_dump
 
     def message_processing_rolling_back_testing(self, message):
-        if message.get('result',0) is None:
+        if message.get('result', 0) is None:
             print(f'Connection open at {datetime.datetime.now()} with rolling windows 1hour.')
             return None
         data = message['data']
@@ -39,7 +39,7 @@ class BackTesting(TradingManager):
         return None
 
     def message_processing_kline_back_testing(self, message):
-        if message.get('result',0) is None:
+        if message.get('result', 0) is None:
             print(f'Connection open at {datetime.datetime.now()} with websocket kline.')
             return None
         data = message['data']
@@ -54,7 +54,7 @@ class BackTesting(TradingManager):
         return None
 
     def message_processing_mini_ticker_back_testing(self, message):
-        if message.get('result',0) is None:
+        if message.get('result', 0) is None:
             print(f'Connection open at {datetime.datetime.now()} with mini ticker.')
             return None
         data = message['data']
@@ -62,16 +62,16 @@ class BackTesting(TradingManager):
         return None
 
     def generate_list_month(self):
-        start_date : datetime.datetime = self.parameters.GLOBAL_PARAMETERS['START_DATE']
-        end_date : datetime.datetime = self.parameters.GLOBAL_PARAMETERS['END_DATE']
+        start_date: datetime.datetime = self.parameters.GLOBAL_PARAMETERS['START_DATE']
+        end_date: datetime.datetime = self.parameters.GLOBAL_PARAMETERS['END_DATE']
         current = datetime.datetime(start_date.year, start_date.month, 1)
         end_month = datetime.datetime(end_date.year, end_date.month, 1)
 
         month_list = [i.strftime("%Y-%m") for i in pd.date_range(start=current, end=end_month, freq='MS')]
         return month_list
 
-    def start(self)->None:
-        t1=time.time()
+    def start(self) -> None:
+        t1 = time.time()
         list_months = self.generate_list_month()
         for month in tqdm(list_months):
             gen_sorted_items = self.datas.fill_dict_time(month)
@@ -80,7 +80,7 @@ class BackTesting(TradingManager):
                     if len(sorted_items.keys()) == 0:
                         continue
                     time_reference = list(sorted_items.keys())[0]
-                    #print(time_reference)
+                    # print(time_reference)
                     for current_time, list_events in sorted_items.items():
                         if current_time - time_reference >= datetime.timedelta(minutes=30):
                             self.screenshot(current_time)
@@ -94,11 +94,10 @@ class BackTesting(TradingManager):
                                 self.message_processing_mini_ticker_back_testing(event)
                     self.portfolio.evaluate_portfolio_value()
             except EndOfBacktest:
-                print(time.time()-t1)
+                print(time.time() - t1)
                 self.stop()
                 return None
         return None
-
 
     def stop(self):
         with open(r"bot/results/TradesLogFile.txt", "a", encoding='utf-8') as f:
@@ -107,52 +106,54 @@ class BackTesting(TradingManager):
             f.write("\n\n")
 
     def buy(self, pair, quote_order_qty, excecuted_price=0, time_=0):
-        executed_qty = quote_order_qty/excecuted_price
+        executed_qty = quote_order_qty / excecuted_price
         step_size = self.get_ticker_tick_size(pair)[0]
-        executed_qty = round((executed_qty//step_size)*step_size,8)
-        working_time_order = datetime.datetime.fromtimestamp(int(time_)/1000)
+        executed_qty = round((executed_qty // step_size) * step_size, 8)
+        working_time_order = datetime.datetime.fromtimestamp(int(time_) / 1000)
         self.portfolio.transaction_order('BUY',
-                                        working_time_order,
-                                        pair,
-                                        executed_qty,
-                                        excecuted_price)
+                                         working_time_order,
+                                         pair,
+                                         executed_qty,
+                                         excecuted_price)
         self.datas.strategy.define_stop_losses(pair, excecuted_price)
-        #print(self.portfolio.df_transaction_history)
+        # print(self.portfolio.df_transaction_history)
 
-    def cancel_replace(self, pair : str, quantity_bought, new_stop_loss_price):
+    def cancel_replace(self, pair: str, quantity_bought, new_stop_loss_price):
         self.place_stop_loss(pair, quantity_bought, new_stop_loss_price)
-    
+
     def place_stop_loss(self, pair, quantity_bought, stop_loss_price):
-        self.orders[pair] = {"quantity" : float(quantity_bought),
-                               'stopLossPrice' : stop_loss_price}
+        self.orders[pair] = {"quantity": float(quantity_bought),
+                             'stopLossPrice': stop_loss_price}
 
     def check_stop_losses(self, ticker, data):
-        working_time_order = datetime.datetime.fromtimestamp(int(data['E'])/1000)
+        working_time_order = datetime.datetime.fromtimestamp(int(data['E']) / 1000)
 
         current_price = self.datas.strategy.prices[ticker][-1]
-        if self.orders[ticker]['stopLossPrice'] >= current_price: #stoplossPrice is incorrect (in usdt when it needs to be in zrxbtc)
+        if self.orders[ticker][
+            'stopLossPrice'] >= current_price:  # stoplossPrice is incorrect (in usdt when it needs to be in zrxbtc)
             try:
                 self.portfolio.transaction_order('SELL',
-                                                working_time_order,
-                                                ticker,
-                                                self.orders[ticker]['quantity'],
-                                                current_price)
+                                                 working_time_order,
+                                                 ticker,
+                                                 self.orders[ticker]['quantity'],
+                                                 current_price)
                 del self.orders[ticker]
             except ValueError:
                 return
-            #print(self.portfolio.df_transaction_history)
+            # print(self.portfolio.df_transaction_history)
 
 
 class DataManager:
     dict_time = defaultdict(list)
+
     def __init__(self):
         self.path = r'bot/data/historical_datas_from_api'
-        self.klines : dict = {}
+        self.klines: dict = {}
         self.rolling_window = {}
         self.kline_write_counter = {}
         self.window_ready = set()
 
-        #for rolling
+        # for rolling
         self.current_volume = {}
         self.current_nb_of_trades = {}
         self.current_quantities = {}
@@ -160,23 +161,23 @@ class DataManager:
         self.volume_to_subtract = {}
         self.current_nb_of_trades_to_substract = {}
         self.current_quantities_to_substract = {}
-         #test
+        # test
         self.nb_of_trades = 0
         self.count = 0
         self.start_date = None
         self.count_debug = 0
 
-        #miniTicker
+        # miniTicker
         self.mini_ticker = {}
 
     def create_kline_1s(self, ticker, row):
-        t = int(row[0]//1000)
+        t = int(row[0] // 1000)
         o = row[1]
         h = row[2]
         l = row[3]
         c = row[4]
         v = row[5]
-        E = int(row[6]//1000)
+        E = int(row[6] // 1000)
         q = row[7]
         n = row[8]
         V = row[9]
@@ -198,7 +199,7 @@ class DataManager:
             'l': l,
             'v': v,
             'n': n,
-            'x':'false',
+            'x': 'false',
             'q': q,
             'V': V,
             'Q': Q,
@@ -209,7 +210,7 @@ class DataManager:
     def update_klines(self, k_1s):
         symbol = k_1s['s']
         minute_timestamp = k_1s['t'] // 60000 * 60000  # début de la minute
-        #Rajouter un compteur > 60 pour être sûr qu'on a bien une vraie kline, pareil pour rolling windows faudra > 3600
+        # Rajouter un compteur > 60 pour être sûr qu'on a bien une vraie kline, pareil pour rolling windows faudra > 3600
 
         symbol_data = self.klines.get(symbol)
         if symbol_data:
@@ -235,14 +236,14 @@ class DataManager:
                 'V': float(k_1s['V']),
                 'Q': float(k_1s['Q']),
                 'B': k_1s['B']
-                }
-            data = {'e' : 'kline',
-                    'E' : k_1s['E'],
-                    's' : symbol,
-                    'k' : k}
-            
-            full_kline = {'stream' : symbol.lower()+'@kline_1m',
-                                'data' : data}
+            }
+            data = {'e': 'kline',
+                    'E': k_1s['E'],
+                    's': symbol,
+                    'k': k}
+
+            full_kline = {'stream': symbol.lower() + '@kline_1m',
+                          'data': data}
             self.klines[symbol] = full_kline
         else:
             agg_data['E'] = k_1s['E']
@@ -260,10 +261,10 @@ class DataManager:
         if self.kline_write_counter[symbol] == 2:
             self.kline_write_counter[symbol] = 0
             if symbol in self.window_ready:
-                time_ = datetime.datetime.fromtimestamp(self.klines[symbol]['data']['E']/1000)
+                time_ = datetime.datetime.fromtimestamp(self.klines[symbol]['data']['E'] / 1000)
                 self.dict_time[time_].append(self.klines[symbol])
                 """ with open(os.path.join(self.path, 'kline1m', symbol + '.txt'), 'a') as f:
-                    f.write(json.dumps(self.klines[symbol])+ '\n') """
+                        f.write(json.dumps(self.klines[symbol])+ '\n') """
 
     def update_rolling_window(self, k_1s):
         symbol = k_1s['s']
@@ -277,14 +278,14 @@ class DataManager:
         E = k_1s['E']
 
         try:
-            w = round(q/v, 8)
+            w = round(q / v, 8)
         except ZeroDivisionError:
             w = None
         data = {'e': '1hTicker',
                 'E': E,
                 's': symbol,
                 'p': p,
-                'P': round(100*p/o, 8),
+                'P': round(100 * p / o, 8),
                 'w': w,
                 'o': k_1s['o'],
                 'h': k_1s['h'],
@@ -298,8 +299,8 @@ class DataManager:
                 'L': None,
                 'n': n}
 
-        full_kline = {'stream' : symbol.lower()+'@ticker_1h',
-                            'data' : data}
+        full_kline = {'stream': symbol.lower() + '@ticker_1h',
+                      'data': data}
         self.rolling_window[symbol].append(full_kline)
 
         self.closes[symbol].append(float(k_1s['c']))
@@ -336,8 +337,8 @@ class DataManager:
                     'E': E,
                     's': symbol,
                     'p': round((self.closes[symbol][-1] - o), 8),
-                    'P': round(100*p/o, 8),
-                    'w': round(q/v, 8),
+                    'P': round(100 * p / o, 8),
+                    'w': round(q / v, 8),
                     'o': round(float(window[0]['data']['o']), 8),
                     'h': round(max(self.closes[symbol]), 8),
                     'l': round(min(self.closes[symbol]), 8),
@@ -349,12 +350,12 @@ class DataManager:
                     'F': None,
                     'L': None,
                     'n': self.current_nb_of_trades[symbol]}
-            full_kline = {'stream' : symbol.lower()+'@ticker_1h',
-                                'data' : data}
-            time_ = datetime.datetime.fromtimestamp(E/1000)
+            full_kline = {'stream': symbol.lower() + '@ticker_1h',
+                          'data': data}
+            time_ = datetime.datetime.fromtimestamp(E / 1000)
             self.dict_time[time_].append(full_kline)
             """ with open(os.path.join(self.path, 'historical_window_1h', symbol + '.txt'), 'a') as f:
-                f.write(json.dumps(full_kline)+ '\n') """
+                    f.write(json.dumps(full_kline)+ '\n') """
 
     def update_mini_ticker(self, k_1s):
         symbol = k_1s['s']
@@ -369,15 +370,15 @@ class DataManager:
             'l': False,
             'v': False,
             'q': False,
-            }
-        full_kline = {'stream' : symbol.lower()+'@miniTicker',
-                        'data' : data}
+        }
+        full_kline = {'stream': symbol.lower() + '@miniTicker',
+                      'data': data}
         self.mini_ticker[symbol] = full_kline
-        if symbol[:-4]+'USDT' in self.window_ready:
-            time_ = datetime.datetime.fromtimestamp(E/1000)
+        if symbol[:-4] + 'USDT' in self.window_ready:
+            time_ = datetime.datetime.fromtimestamp(E / 1000)
             self.dict_time[time_].append(self.mini_ticker[symbol])
             """ with open(os.path.join(self.path, 'mini_ticker', symbol + '.txt'), 'a') as f:
-                f.write(json.dumps(self.mini_ticker[symbol])+ '\n') """
+                    f.write(json.dumps(self.mini_ticker[symbol])+ '\n') """
 
     def extract_zip_stream(self, zip_path):
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -406,11 +407,11 @@ class DataManager:
         return file_path
 
     def process_dataframe(self,
-                          start_date : str,
-                          end_date : str,
-                          ticker : str,
-                          df : pd.DataFrame,
-                          num_cryptos_completed : int) -> int:
+                          start_date: str,
+                          end_date: str,
+                          ticker: str,
+                          df: pd.DataFrame,
+                          num_cryptos_completed: int) -> int:
         """
         Read the dataframe and process it to create the kline
         Args:
@@ -422,15 +423,15 @@ class DataManager:
             num_cryptos_completed: True if the first date is greater than the end date (end of backtest), False otherwise
         """
         if df['E'].iloc[0] > end_date:
-            num_cryptos_completed+=1
+            num_cryptos_completed += 1
             return num_cryptos_completed
-        
-        df : pd.DataFrame = df[(df['E'] >= start_date) & (df['E'] <= end_date)].copy()
+
+        df: pd.DataFrame = df[(df['E'] >= start_date) & (df['E'] <= end_date)].copy()
 
         if df.empty:
             return num_cryptos_completed
 
-        print(datetime.datetime.fromtimestamp(int((df["E"].iloc[0]-7_200_000)/1_000_000)))
+        print(datetime.datetime.fromtimestamp(int((df["E"].iloc[0] - 7_200_000) / 1_000_000)))
         for kline in df.values:
             kline = self.create_kline_1s(ticker, kline)
             if ticker.endswith('USDT'):
@@ -439,7 +440,7 @@ class DataManager:
             else:
                 self.update_mini_ticker(kline)
         return num_cryptos_completed
-    
+
 
 class Datas:
     path_ = r'bot/data/historical_datas'
@@ -448,6 +449,7 @@ class Datas:
     path_files_mini_ticker = []
     end_of_the_file = False
     COLUMNS_NAMES = ["t", "o", "h", "l", "c", "v", "E", "q", "n", "V", "Q", "B"]
+
     def __init__(self, parameters, strategy=None):
         self.list_tickers: list[str] = parameters.GLOBAL_PARAMETERS['LIST_TICKERS']
         self.strategy = strategy
@@ -470,7 +472,7 @@ class Datas:
                 for ticker in self.list_tickers if not ticker.endswith('USDT')
             ]
 
-    def set_strategy(self, strategy : Strategy):
+    def set_strategy(self, strategy: Strategy):
         self.strategy = strategy
 
     def build_path(self, symbol, month):
@@ -485,7 +487,7 @@ class Datas:
         return path
 
     def generate_list_month(self):
-        
+
         current = datetime.datetime(self.start_date.year, self.start_date.month, 1)
         end_month = datetime.datetime(self.end_date.year, self.end_date.month, 1)
 
@@ -503,11 +505,11 @@ class Datas:
         for i, symbol in enumerate(PAIRS_FOR_BACKTEST):
             file_path = self.build_path(symbol, month)
             file_path_csv = self.data_manager.extract_zip_stream(file_path)
-            gen = pd.read_csv(file_path_csv, chunksize=1_000, compression='infer', names = self.COLUMNS_NAMES)
+            gen = pd.read_csv(file_path_csv, chunksize=1_000, compression='infer', names=self.COLUMNS_NAMES)
             generators.append((symbol, gen))
             print(i)
 
-        #Lecture par chunks de 1000 lignes
+        # Lecture par chunks de 1000 lignes
         while True:
             all_exhausted = True
             chunks = []
@@ -526,23 +528,24 @@ class Datas:
 
             # Traitement des chunks du mois en cours
             # Chaque chunk représente 1000 lignes d'un ticker
-            self.data_manager.dict_time = defaultdict(list) #On reset le dictionnaire des events avant chaque nouvelles 1000 lignes traitées
+            self.data_manager.dict_time = defaultdict(
+                list)  # On reset le dictionnaire des events avant chaque nouvelles 1000 lignes traitées
             num_cryptos_completed = 0
             for symbol, chunk in chunks:
                 print(symbol)
                 if chunk is not None:
-                    num_cryptos_completed = self.data_manager.process_dataframe(start_date_timestamp, 
-                                                                                end_date_timestamp, 
-                                                                                symbol, 
+                    num_cryptos_completed = self.data_manager.process_dataframe(start_date_timestamp,
+                                                                                end_date_timestamp,
+                                                                                symbol,
                                                                                 chunk,
                                                                                 num_cryptos_completed)
                     if num_cryptos_completed == len(PAIRS_FOR_BACKTEST):
                         raise EndOfBacktest()
             sorted_items = dict(sorted(self.data_manager.dict_time.items(), key=lambda item: item[0]))
 
-            #print()
-            #print(len(sorted_items))
-            #print("Temps pris pour former le dicitonnaire :", t2-t1)
+            # print()
+            # print(len(sorted_items))
+            # print("Temps pris pour former le dicitonnaire :", t2-t1)
             yield sorted_items
 
 

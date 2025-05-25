@@ -11,8 +11,9 @@ from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
 from bot.trading.base_trading import TradingManager, SimulationSaver
 from bot.strategy.base_strategy import Strategy
 
+
 class LiveTrading(TradingManager):
-    def __init__(self, parameters, portfolio, simulation_saver : SimulationSaver):
+    def __init__(self, parameters, portfolio, simulation_saver: SimulationSaver):
         super().__init__(parameters, portfolio, simulation_saver)
         self.websocket_manager = WebsocketManager(parameters, self.api_key, self.api_secret)
         self.parameters = parameters
@@ -25,21 +26,22 @@ class LiveTrading(TradingManager):
         return None
 
     def start(self):
-        list_tickers : list[str] = self.parameters.GLOBAL_PARAMETERS["LIST_TICKERS"]
-        list_ticker_kline = [ticker.lower()+f'@kline_1m' for ticker in list_tickers if ticker.endswith('USDT')]
-        list_ticker_rolling1h = [ticker.lower()+'@ticker_1h' for ticker in list_tickers if ticker.endswith('USDT')]
-        list_ticker_price_update = [ticker.lower()+'@miniTicker' for ticker in list_tickers if not ticker.endswith('USDT')]
+        list_tickers: list[str] = self.parameters.GLOBAL_PARAMETERS["LIST_TICKERS"]
+        list_ticker_kline = [ticker.lower() + f'@kline_1m' for ticker in list_tickers if ticker.endswith('USDT')]
+        list_ticker_rolling1h = [ticker.lower() + '@ticker_1h' for ticker in list_tickers if ticker.endswith('USDT')]
+        list_ticker_price_update = [ticker.lower() + '@miniTicker' for ticker in list_tickers if
+                                    not ticker.endswith('USDT')]
 
-        self.websocket_manager.ws_client_kline.subscribe(stream = list_ticker_kline)
-        self.websocket_manager.ws_client_rolling_1h.subscribe(stream = list_ticker_rolling1h)
-        self.websocket_manager.ws_client_mini_ticker.subscribe(stream = list_ticker_price_update)
+        self.websocket_manager.ws_client_kline.subscribe(stream=list_ticker_kline)
+        self.websocket_manager.ws_client_rolling_1h.subscribe(stream=list_ticker_rolling1h)
+        self.websocket_manager.ws_client_mini_ticker.subscribe(stream=list_ticker_price_update)
 
         logging.info('start sleep')
         self.periodic_sleep(self.parameters.GLOBAL_PARAMETERS['DURATION_TIME'], 300)
         self.stop()
 
     def stop(self):
-        #Ici appeler portfolio evaluate
+        # Ici appeler portfolio evaluate
         logging.info("unsubscribe user data")
         self.portfolio.evaluate_portfolio_value()
         self.websocket_manager.ws_user_data.user_data(
@@ -53,18 +55,18 @@ class LiveTrading(TradingManager):
 
     def place_stop_loss(self, ticker, quantity_bought, stop_loss_price):
         self.websocket_manager.ws_api_client.new_order(symbol=ticker,
-                                                        side="SELL",
-                                                        type="STOP_LOSS",
-                                                        quantity=quantity_bought,
-                                                        stopPrice=stop_loss_price,
-                                                        newClientOrderId=f'stop_loss_{ticker}',
-                                                        newOrderRespType="FULL")
+                                                       side="SELL",
+                                                       type="STOP_LOSS",
+                                                       quantity=quantity_bought,
+                                                       stopPrice=stop_loss_price,
+                                                       newClientOrderId=f'stop_loss_{ticker}',
+                                                       newOrderRespType="FULL")
 
-    def get_open_orders_and_cancel(self)->None:
-        program_type : str = self.parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
+    def get_open_orders_and_cancel(self) -> None:
+        program_type: str = self.parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
         stream_url = None
         if program_type == 'TEST':
-            stream_url="wss://ws-api.testnet.binance.vision/ws-api/v3"
+            stream_url = "wss://ws-api.testnet.binance.vision/ws-api/v3"
         elif program_type == 'PROD':
             stream_url = "wss://ws-api.binance.com:443/ws-api/v3"
 
@@ -81,18 +83,18 @@ class LiveTrading(TradingManager):
 
     def buy(self, ticker, quote_order_qty, excecuted_price=0, time_=0):
         return self.websocket_manager.ws_api_client.new_order(symbol=ticker,
-                                                            side="BUY",
-                                                            type="MARKET",
-                                                            quoteOrderQty=quote_order_qty,
-                                                            newClientOrderId=f'buy_market_{ticker}',
-                                                            newOrderRespType="FULL")
+                                                              side="BUY",
+                                                              type="MARKET",
+                                                              quoteOrderQty=quote_order_qty,
+                                                              newClientOrderId=f'buy_market_{ticker}',
+                                                              newOrderRespType="FULL")
 
     def cancel_replace(self, ticker, quantity_bought, new_stop_loss_price):
         self.websocket_manager.ws_api_client.cancel_replace_order(
             ticker,
             side='SELL',
             cancelReplaceMode="ALLOW_FAILURE",
-            cancelOrigClientOrderId = f'stop_loss_{ticker}',
+            cancelOrigClientOrderId=f'stop_loss_{ticker}',
             newClientOrderId=f"stop_loss_{ticker}",
             type="STOP_LOSS",
             quantity=quantity_bought,
@@ -106,8 +108,8 @@ class WebsocketManager:
         self.program_type = parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
         self.api_key = api_key
         self.api_secret = api_secret
-        self.message_handler : MessageHandler = MessageHandler(None)
-        self.ws_api_client =  self.create_websocket_api()
+        self.message_handler: MessageHandler = MessageHandler(None)
+        self.ws_api_client = self.create_websocket_api()
         self.client = self.create_client()
         self.listen_key = self.get_listen_key()
         self.ws_user_data = self.create_websocket_stream('userData')
@@ -130,16 +132,16 @@ class WebsocketManager:
         elif self.program_type in ['PROD', 'BACKTEST']:
             stream_url = "wss://ws-api.binance.com:443/ws-api/v3"
         return SpotWebsocketAPIClient(stream_url=stream_url,
-                                        api_key=self.api_key,
-                                        api_secret=self.api_secret,
-                                        on_message=self.message_handler.message_handler_orders)
+                                      api_key=self.api_key,
+                                      api_secret=self.api_secret,
+                                      on_message=self.message_handler.message_handler_orders)
 
     def get_listen_key(self):
         response = self.client.new_listen_key()
         listen_key = response["listenKey"]
         return listen_key
 
-    def create_websocket_stream(self, on_message_stream_name : str):
+    def create_websocket_stream(self, on_message_stream_name: str):
         if self.program_type == 'TEST':
             stream_url = "wss://stream.testnet.binance.vision"
         else:
@@ -153,7 +155,7 @@ class WebsocketManager:
             ws_user_data.user_data(listen_key=self.listen_key)
             return ws_user_data
         elif on_message_stream_name == 'kline':
-            #Si on utilise "wss://stream.testnet.binance.vision",
+            # Si on utilise "wss://stream.testnet.binance.vision",
             # #on va récupérer les données du test net qui sont très peu représentatatives du marché
             stream_url = "wss://stream.binance.com:9443"
             return SpotWebsocketStreamClient(
@@ -179,16 +181,16 @@ class WebsocketManager:
 
 
 class MessageHandler:
-    def __init__(self, pump_and_dump : Strategy):
+    def __init__(self, pump_and_dump: Strategy):
         self.pump_and_dump = pump_and_dump
 
-    def set_strategy(self, pump_and_dump : Strategy):
+    def set_strategy(self, pump_and_dump: Strategy):
         self.pump_and_dump = pump_and_dump
 
     def message_processing_rolling(self, _, source):
-        message : dict = json.loads(source)
+        message: dict = json.loads(source)
 
-        if message.get('result',0) is None:
+        if message.get('result', 0) is None:
             print(f'Connection open at {datetime.datetime.now()} with rolling windows 1hour.')
             return
         self.pump_and_dump.update_parameters('1h', message['data'])
@@ -196,8 +198,8 @@ class MessageHandler:
         return None
 
     def message_processing_mini_ticker(self, _, source):
-        message : dict = json.loads(source)
-        if message.get('result',0) is None:
+        message: dict = json.loads(source)
+        if message.get('result', 0) is None:
             print(f'Connection open at {datetime.datetime.now()} with websocket mini ticker.')
             return None
         self.pump_and_dump.update_parameters(None, message['data'])
@@ -205,8 +207,8 @@ class MessageHandler:
         return None
 
     def message_processing_kline(self, _, source):
-        message : dict = json.loads(source)
-        if message.get('result',0) is None:
+        message: dict = json.loads(source)
+        if message.get('result', 0) is None:
             print(f'Connection open at {datetime.datetime.now()} with websocket kline.')
             return None
         self.pump_and_dump.update_parameters('1m', message['data']['k'])
@@ -219,23 +221,23 @@ class MessageHandler:
         path = r'bot/data/historical_datas'
         if 'kline' in message['stream']:
             with open(
-                os.path.join(path, 'kline1m', message['data']['s'] + '.txt'),
-                'a',
-                encoding= 'utf-8'
+                    os.path.join(path, 'kline1m', message['data']['s'] + '.txt'),
+                    'a',
+                    encoding='utf-8'
             ) as f:
-                f.write(json.dumps(message)+ '\n')
+                f.write(json.dumps(message) + '\n')
         elif 'miniTicker' in message['stream']:
             with open(
-                os.path.join(path, 'mini_ticker', message['data']['s'] + '.txt'),
-                'a', 
-                encoding = 'utf-8'
+                    os.path.join(path, 'mini_ticker', message['data']['s'] + '.txt'),
+                    'a',
+                    encoding='utf-8'
             ) as f:
                 f.write(json.dumps(message) + '\n')
         elif 'ticker' in message['stream']:
             with open(
-                os.path.join(path, 'historical_window_1h', message['data']['s'] + '.txt'),
-                'a', 
-                encoding = 'utf-8'
+                    os.path.join(path, 'historical_window_1h', message['data']['s'] + '.txt'),
+                    'a',
+                    encoding='utf-8'
             ) as f:
                 f.write(json.dumps(message) + '\n')
 
@@ -254,11 +256,11 @@ class MessageHandler:
             )
 
     def message_handler_orders(self, _, source):
-        message : dict = json.loads(source)
+        message: dict = json.loads(source)
         if message.get('result', 0) is None:
             return None
         if 'error' in message:
-            error : dict = message['error']
+            error: dict = message['error']
             logging.debug("Code : %s", error['code'])
             logging.debug("Message : %s", error['msg'])
             logging.debug("data_error : %s", error.get('data', None))
@@ -269,30 +271,30 @@ class MessageHandler:
             if result['cancelResult'] == 'SUCCESS' and result['newOrderResult'] == 'SUCCESS':
                 logging.debug('Order canceled successfully.')
         elif result['status'] == 'FILLED':
-            #client_order_id = result['clientOrderId']
-            #executed_base_qty = float(result['cummulativeQuoteQty'])
-            #executed_qty = float(result['executedQty'])
-            #working_time_order = datetime.datetime.fromtimestamp(int(result['workingTime'])/1000)
-            #side = result['side']
-            #fills = result['fills'][0]
-            #executed_price = float(fills['price'])
-            #ticker = result['symbol']
-            #commission = float(fills['commission'])
-            #commission_asset = fills['commissionAsset']
+            # client_order_id = result['clientOrderId']
+            # executed_base_qty = float(result['cummulativeQuoteQty'])
+            # executed_qty = float(result['executedQty'])
+            # working_time_order = datetime.datetime.fromtimestamp(int(result['workingTime'])/1000)
+            # side = result['side']
+            # fills = result['fills'][0]
+            # executed_price = float(fills['price'])
+            # ticker = result['symbol']
+            # commission = float(fills['commission'])
+            # commission_asset = fills['commissionAsset']
             pass
 
         elif result['status'] == 'NEW':
             pass
-            #pprint.pprint(message)
+            # pprint.pprint(message)
         else:
             pprint.pprint(message)
             pprint.pprint(result['status'])
         return None
 
     def message_user_data(self, _, source):
-        message : dict = json.loads(source)
+        message: dict = json.loads(source)
         if message.get('e', None) == 'outboundAccountPosition':
-            pass#contient la balance avec l'asset qui a changé uniquement
+            pass  # contient la balance avec l'asset qui a changé uniquement
         elif message.get('e', None) == 'executionReport':
             side = message['S']
             if message.get('x', None) == 'CANCELED' and side == 'SELL':
@@ -311,7 +313,7 @@ class MessageHandler:
                 ticker = message['s']
                 executed_price = float(message['L'])
                 logging.debug('%s DONE', side)
-                working_time_order = datetime.datetime.fromtimestamp(int(message['T'])/1000)
+                working_time_order = datetime.datetime.fromtimestamp(int(message['T']) / 1000)
                 executed_qty = float(message['l'])
                 commission, commission_asset = float(message['n']), message['N']
 
@@ -327,13 +329,13 @@ class MessageHandler:
                     )
                 except Exception:
                     # To Check
-                    print("error impossible de sell") 
+                    print("error impossible de sell")
 
                 if side == 'BUY':
                     logging.debug("Ticker : %s | Prix d'achat : %s", message['s'], message['L'])
                     threading.Thread(
                         target=self.pump_and_dump.define_stop_losses,
-                        args = (ticker, executed_price)
+                        args=(ticker, executed_price)
                     ).start()
                 elif side == 'SELL':
                     logging.debug("Ticker : %s | USDT en plus : %s | Au prix : %s",
