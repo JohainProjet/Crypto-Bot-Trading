@@ -316,10 +316,13 @@ class PumpDump(Strategy):
 	def take_decision(self, data):
 		pair_in_usdt = data['k']['s']
 		pair = pair_in_usdt[:-4] + self.get_trading_pair(pair_in_usdt[:-4]) #Pair in USDC/TRY/BTC
-		if pair in self.potential_pump and pair not in self.ticker_bought_parameters:
-			#Ticker bought parameters is filled when a buy order is placed,
-			# and deleted when the ticker was bought 30 minutes ago
-			self.confirm_pump(data)
+		
+		if pair in self.potential_pump:
+			date_achat = self.ticker_bought_parameters.get(pair, {}).get('date_of_buy', None)
+			now = datetime.datetime.fromtimestamp(int(data['E']) / 1000)
+			if date_achat is None or (now - date_achat) >= datetime.timedelta(minutes=30):
+				self.confirm_pump(data)
+
 		self.detect_potential_pump(pair, data)
 
 		if pair in self.trading_manager.portfolio.actifs:
@@ -352,13 +355,6 @@ class PumpDump(Strategy):
 		if websocket_stream == '1m':
 			price_is_going_up = bool(float(k['c']) > float(k['o']))
 			self.data_storage[row_idx, self.COLUMN_MAPPING[("Price is going up", "")]] = price_is_going_up
-		if 'E' in k:
-			now = datetime.datetime.fromtimestamp(int(k['E']) / 1000)
-			# We can buy again if the last buy was more than 30 minutes ago
-			self.ticker_bought_parameters = {
-				pair: params for pair, params in self.ticker_bought_parameters.items()
-				if now - params['date_of_buy'] <= datetime.timedelta(minutes=30)
-			}
 			
 	def update_parameters(self, websocket_stream : str, k):
 		""" Update parameters (volume/variation/nb of trades)"""
