@@ -587,7 +587,7 @@ PAIRS_FOR_BACKTEST = ['ETHUSDT', 'LTCUSDT', 'ZILUSDT', 'BTCUSDT', 'THETAUSDC', '
                       'ARDRUSDT', 'ADXUSDT', 'MTLUSDT', 'XLMUSDC', 'NEOUSDC', 'RLCUSDT', 'QTUMTRY', 'DATAUSDT',
                       'BNBUSDT', 'QTUMUSDT', 'BATBTC', 'LINKUSDT', 'BNBUSDC', 'POWRBTC', 'PHBUSDT', 'ETCTRY',
                       'LRCTRY', 'LTCUSDC', 'DASHUSDT', 'STORJUSDT', 'XRPUSDT', 'LSKBTC', 'ICXBTC', 'WANBTC',
-                      'RVNUSDT', 'ENJTRY', 'WANUSDT', 'FETUSDT', 'STEEMUSDC']
+                      'RVNUSDT', 'ENJTRY', 'WANUSDT', 'FETUSDT']
 
 
 def generate_parameters_combinaison():

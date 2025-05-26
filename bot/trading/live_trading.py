@@ -10,11 +10,14 @@ from binance.websocket.spot.websocket_stream import SpotWebsocketStreamClient
 from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
 from bot.trading.base_trading import TradingManager, SimulationSaver
 from bot.strategy.base_strategy import Strategy
+from config import get_api_keys
 
 
 class LiveTrading(TradingManager):
     def __init__(self, parameters, portfolio, simulation_saver: SimulationSaver):
         super().__init__(parameters, portfolio, simulation_saver)
+        program_type = parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
+        self.api_key, self.api_secret = get_api_keys(environnement=program_type)
         self.websocket_manager = WebsocketManager(parameters, self.api_key, self.api_secret)
         self.parameters = parameters
 

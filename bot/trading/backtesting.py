@@ -1,23 +1,26 @@
-import os
 import datetime
+import os
 import time
-import pandas as pd
 import zipfile
-from tqdm import tqdm
 from collections import defaultdict, deque
-from binance.spot import Spot as Client
-from bot.trading.base_trading import TradingManager
+
+import pandas as pd
+import bottleneck as bn
+from tqdm import tqdm
+
 from bot.strategy.base_strategy import Strategy
+from bot.trading.base_trading import TradingManager
 from bot.utils.helpers import PAIRS_FOR_BACKTEST
 
 
 class BackTesting(TradingManager):
-    def __init__(self, parameters, portfolio, simulation_saver):
+    def __init__(self, parameters, portfolio, simulation_saver, ticker_info: dict[str, dict[str, float]]):
         super().__init__(parameters, portfolio, simulation_saver)
         self.list_tickers = parameters.GLOBAL_PARAMETERS['LIST_TICKERS']
+        self.ticker_info = ticker_info
         self.parameters = parameters
         self.datas = Datas(parameters)
-        self.orders: dict[dict[str, float]] = {}  # Only ticker+USDT
+        self.orders: dict[str, dict[str, float]] = {}  # Only ticker+USDT
 
     def set_pump_and_dump(self, pump_and_dump):
         self.pump_and_dump = pump_and_dump
@@ -31,12 +34,7 @@ class BackTesting(TradingManager):
         return None
 
     def get_ticker_tick_size(self, ticker):
-        client = Client(self.api_key, base_url='https://api.binance.com')
-        resp = client.exchange_info()['symbols']
-        for elem in resp:
-            if elem['symbol'] == ticker:
-                return float(elem['filters'][1]['stepSize']), float(elem['filters'][0]['tickSize'])
-        return None
+        return self.ticker_info[ticker]['step_size'], self.ticker_info[ticker]['tick_size']
 
     def message_processing_kline_back_testing(self, message):
         if message.get('result', 0) is None:
@@ -266,7 +264,7 @@ class DataManager:
                 """ with open(os.path.join(self.path, 'kline1m', symbol + '.txt'), 'a') as f:
                         f.write(json.dumps(self.klines[symbol])+ '\n') """
 
-    def update_rolling_window(self, k_1s):
+    def update_rolling_window(self, k_1s, close_min: float, close_max: float):
         symbol = k_1s['s']
         if symbol not in self.rolling_window:
             self.rolling_window[symbol] = deque()
@@ -340,8 +338,8 @@ class DataManager:
                     'P': round(100 * p / o, 8),
                     'w': round(q / v, 8),
                     'o': round(float(window[0]['data']['o']), 8),
-                    'h': round(max(self.closes[symbol]), 8),
-                    'l': round(min(self.closes[symbol]), 8),
+                    'h': round(close_max, 8),
+                    'l': round(close_min, 8),
                     'c': round(self.closes[symbol][-1], 8),
                     'v': v,
                     'q': q,
@@ -432,10 +430,24 @@ class DataManager:
             return num_cryptos_completed
 
         print(datetime.datetime.fromtimestamp(int((df["E"].iloc[0] - 7_200_000) / 1_000_000)))
-        for kline in df.values:
+
+        # Compute the rolling window mim/max
+        rolling_1h_close_max = bn.move_max(df["c"].values, 3600, min_count=1)
+        rolling_1h_close_min = bn.move_min(df["c"].values, 3600, min_count=1)
+
+        # Min/max by minute
+        df['minute'] = df['E'] // 60000
+        minute_agg = df.groupby('minute').agg({'c': ['min', 'max']}).to_dict('index')
+
+        for kline, close_min, close_max in zip(df.values, rolling_1h_close_min, rolling_1h_close_max):
             kline = self.create_kline_1s(ticker, kline)
+            # We adjust the 1h close min/max by using minute min/max
+            window_first_minute = (kline["E"] - 59_999) // 60_000
+            start_minute_agg = minute_agg.get(window_first_minute, {"min": float("inf"), "max": float("-inf")})
+            close_min = min(close_min, start_minute_agg["min"])
+            close_max = min(close_min, start_minute_agg["max"])
             if ticker.endswith('USDT'):
-                self.update_rolling_window(kline)
+                self.update_rolling_window(kline, close_min, close_max)
                 self.update_klines(kline)
             else:
                 self.update_mini_ticker(kline)
@@ -505,7 +517,7 @@ class Datas:
         for i, symbol in enumerate(PAIRS_FOR_BACKTEST):
             file_path = self.build_path(symbol, month)
             file_path_csv = self.data_manager.extract_zip_stream(file_path)
-            gen = pd.read_csv(file_path_csv, chunksize=1_000, compression='infer', names=self.COLUMNS_NAMES)
+            gen = pd.read_csv(file_path_csv, chunksize=10_800, compression='infer', names=self.COLUMNS_NAMES)
             generators.append((symbol, gen))
             print(i)
 

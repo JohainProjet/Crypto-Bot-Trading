@@ -1,5 +1,7 @@
 import datetime
 import logging
+import time
+
 import optuna
 import pytz
 from binance.lib.utils import config_logging
@@ -11,8 +13,8 @@ config_logging(logging, logging.INFO)
 
 DEFAULT_PROGRAM_MODE = 'BACKTEST'
 START_DATE = datetime.datetime(2025, 4, 1, 0, 0, 0, tzinfo=pytz.utc)
-END_DATE = datetime.datetime(2025, 4, 1, 23, 59, 0, tzinfo=pytz.utc)
-
+END_DATE = datetime.datetime(2025, 4, 1, 3, 0, 0, tzinfo=pytz.utc)
+print(START_DATE)
 LIST_TICKERS = load_tickers()
 DURATION_TIME = 43200
 STD_ROLLING_SIZE = 100
@@ -29,6 +31,8 @@ GLOBAL_PARAMETERS = {'DEFAULT_PROGRAM_MODE': DEFAULT_PROGRAM_MODE,
 
 
 def main(parameters: Parameters, simulation_saver: SimulationSaver) -> float:
+    if DEFAULT_PROGRAM_MODE == 'BACKTEST':
+        start_time = time.time()
     portfolio = Portfolio(DEFAULT_PROGRAM_MODE, 500, {})
 
     logging.info("Lancement de la stratégie avec les paramètres suivants : %s", parameters.SPECIFIC_PARAMETERS)
@@ -44,6 +48,8 @@ def main(parameters: Parameters, simulation_saver: SimulationSaver) -> float:
     strategy.trading_manager.start()
     cash, assets_value = portfolio.evaluate_portfolio_value()
     portfolio_value = cash + assets_value
+    if DEFAULT_PROGRAM_MODE == 'BACKTEST':
+        print(f"Simulation ran in {time.time() - start_time} seconds")
     return portfolio_value
 
 
@@ -86,7 +92,7 @@ def objective(trial) -> float:
 if __name__ == '__main__':
     # Try to find the best parameters to maximize returns on portfolio for the last month
     study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=100)
+    study.optimize(objective, n_trials=1)
 
     print("Best trial:")
     trial = study.best_trial

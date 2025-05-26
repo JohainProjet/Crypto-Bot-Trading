@@ -1,10 +1,10 @@
-import time
-import sqlite3
-import json
 import datetime
+import json
+import sqlite3
+import time
 from abc import ABC, abstractmethod
+
 from bot.utils.helpers import Portfolio, Parameters
-from config import get_api_keys
 
 
 class SimulationSaver:
@@ -113,8 +113,6 @@ class SimulationSaver:
 
 class TradingManager(ABC):
     def __init__(self, parameters: Parameters, portfolio: Portfolio, simulation_saver: SimulationSaver):
-        program_type = parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
-        self.api_key, self.api_secret = get_api_keys(environnement=program_type)
         self.portfolio = portfolio
         self.parameters = parameters
         # if program_type == 'BACKTEST':

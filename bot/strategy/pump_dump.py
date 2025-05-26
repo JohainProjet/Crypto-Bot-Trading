@@ -1,6 +1,8 @@
 import datetime
 import numpy as np
 from collections import defaultdict
+
+from bot.data.ticker_info import parse_ticker_stepsizes
 from bot.utils.helpers import Portfolio, Parameters, TRADING_PAIRS
 from bot.strategy.base_strategy import Strategy
 from bot.trading.base_trading import SimulationSaver
@@ -24,10 +26,12 @@ class PumpDump(Strategy):
                 simulation_saver
             )
         else:
+            ticker_info = parse_ticker_stepsizes("bot/data/tickers_stepsizes.txt")
             self.trading_manager = BackTesting(
                 parameters,
                 portfolio,
-                simulation_saver)
+                simulation_saver,
+                ticker_info)
 
         self.parameters = parameters
         self.portfolio = portfolio
