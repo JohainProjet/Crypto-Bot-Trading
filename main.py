@@ -7,9 +7,9 @@ from bot.strategy.pump_dump import PumpDump
 from bot.utils.helpers import Parameters, Portfolio, generate_parameters_combinaison, load_tickers
 from bot.trading.base_trading import SimulationSaver
 
-config_logging(logging, logging.INFO)
+config_logging(logging, logging.DEBUG)
 
-DEFAULT_PROGRAM_MODE = 'BACKTEST'
+DEFAULT_PROGRAM_MODE = 'PROD'
 START_DATE = datetime.datetime(2025, 4, 1, 0, 0,0, tzinfo=pytz.utc)
 END_DATE = datetime.datetime(2025, 4, 1, 23, 59, 0, tzinfo=pytz.utc)
 
@@ -40,7 +40,7 @@ def main(parameters : Parameters, simulation_saver : SimulationSaver)->float:
     elif DEFAULT_PROGRAM_MODE in ['PROD', 'TEST']:
         strategy.trading_manager.websocket_manager.message_handler.set_strategy(strategy)
         strategy.trading_manager.get_open_orders_and_cancel()
-    
+
     strategy.trading_manager.start()
     cash, assets_value = portfolio.evaluate_portfolio_value()
     portfolio_value = cash + assets_value
@@ -68,12 +68,12 @@ def objective(trial)-> float:
     stop_loss_prct = 0.99
     stop_loss_adjust_stop_loss = 0.995
     SPECIFIC_PARAMETERS = {'first_check_volume': first_check_volume, 
-            'first_check_variation': first_check_variation, 
-            'first_check_nb_of_trades': first_check_nb_of_trades,
-            'second_check_volume' : second_check_volume,
-            'second_check_nb_of_trades' : second_check_nb_of_trades,
-            'stop_loss_prct' : stop_loss_prct,
-            'stop_loss_adjust_stop_loss' : stop_loss_adjust_stop_loss}
+                            'first_check_variation': first_check_variation, 
+                            'first_check_nb_of_trades': first_check_nb_of_trades,
+                            'second_check_volume' : second_check_volume,
+                            'second_check_nb_of_trades' : second_check_nb_of_trades,
+                            'stop_loss_prct' : stop_loss_prct,
+                            'stop_loss_adjust_stop_loss' : stop_loss_adjust_stop_loss}
 
     parameters = Parameters(GLOBAL_PARAMETERS,
                             SPECIFIC_PARAMETERS)
@@ -83,10 +83,25 @@ def objective(trial)-> float:
 
 if __name__ == '__main__':
     # Try to find the best parameters to maximize returns on portfolio for the last month
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=100)
+    if DEFAULT_PROGRAM_MODE == 'BACKTEST':    
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=100)
 
-    print("Best trial:")
-    trial = study.best_trial
-    print(f"  Value: {trial.value}") #Value of the best simulation
-    print(f"  Params: {trial.params}") #Parameters values
+        print("Best trial:")
+        trial = study.best_trial
+        print(f"  Value: {trial.value}") #Value of the best simulation
+        print(f"  Params: {trial.params}") #Parameters values
+    else:
+
+        SPECIFIC_PARAMETERS = {'first_check_volume': 3.2223601420837982, 
+                                'first_check_variation': 2.5693678102427668, 
+                                'first_check_nb_of_trades': 2.2978247931118673,
+                                'second_check_volume' : 0.09708600597432292,
+                                'second_check_nb_of_trades' : 0.10745036685493199,
+                                'stop_loss_prct' : 0.99,
+                                'stop_loss_adjust_stop_loss' : 0.995}
+        parameters = Parameters(GLOBAL_PARAMETERS,
+                                SPECIFIC_PARAMETERS)
+
+        simulation_saver = SimulationSaver()
+        main(parameters, simulation_saver)

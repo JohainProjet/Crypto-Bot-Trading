@@ -12,6 +12,7 @@ from bot.trading.base_trading import TradingManager, SimulationSaver
 from bot.strategy.base_strategy import Strategy
 
 class LiveTrading(TradingManager):
+    """Manages live trading operations using Binance's WebSocket API."""
     def __init__(self, parameters, portfolio, simulation_saver : SimulationSaver):
         super().__init__(parameters, portfolio, simulation_saver)
         self.websocket_manager = WebsocketManager(parameters, self.api_key, self.api_secret)
@@ -25,6 +26,11 @@ class LiveTrading(TradingManager):
         return None
 
     def start(self):
+        """Start the live trading session by subscribing to necessary WebSocket streams.
+         * Rolling windows 1h 
+         * Kline 1m
+         * Mini ticker.
+        """
         list_tickers : list[str] = self.parameters.GLOBAL_PARAMETERS["LIST_TICKERS"]
         list_ticker_kline = [ticker.lower()+f'@kline_1m' for ticker in list_tickers if ticker.endswith('USDT')]
         list_ticker_rolling1h = [ticker.lower()+'@ticker_1h' for ticker in list_tickers if ticker.endswith('USDT')]
@@ -39,7 +45,6 @@ class LiveTrading(TradingManager):
         self.stop()
 
     def stop(self):
-        #Ici appeler portfolio evaluate
         logging.info("unsubscribe user data")
         self.portfolio.evaluate_portfolio_value()
         self.websocket_manager.ws_user_data.user_data(
@@ -52,6 +57,7 @@ class LiveTrading(TradingManager):
         self.websocket_manager.ws_client_mini_ticker.stop()
 
     def place_stop_loss(self, ticker, quantity_bought, stop_loss_price):
+        """ Places a stop loss order for a given ticker."""
         self.websocket_manager.ws_api_client.new_order(symbol=ticker,
                                                         side="SELL",
                                                         type="STOP_LOSS",
@@ -61,6 +67,12 @@ class LiveTrading(TradingManager):
                                                         newOrderRespType="FULL")
 
     def get_open_orders_and_cancel(self)->None:
+        """
+        Retrieves all current open orders and cancels them.
+        This is useful to ensure that no previous orders interfere with the current trading strategy. 
+        Returns:
+            None
+        """
         program_type : str = self.parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
         stream_url = None
         if program_type == 'TEST':
@@ -80,6 +92,7 @@ class LiveTrading(TradingManager):
         return None
 
     def buy(self, ticker, quote_order_qty, excecuted_price=0, time_=0):
+        """ Place a market order to buy a ticker with a specified quote order quantity."""
         return self.websocket_manager.ws_api_client.new_order(symbol=ticker,
                                                             side="BUY",
                                                             type="MARKET",
@@ -88,6 +101,7 @@ class LiveTrading(TradingManager):
                                                             newOrderRespType="FULL")
 
     def cancel_replace(self, ticker, quantity_bought, new_stop_loss_price):
+        """Cancel the existing stop loss order and replace it with a new one at a different price."""
         self.websocket_manager.ws_api_client.cancel_replace_order(
             ticker,
             side='SELL',
@@ -102,6 +116,7 @@ class LiveTrading(TradingManager):
 
 
 class WebsocketManager:
+    """Manages WebSocket connections for live trading operations."""
     def __init__(self, parameters, api_key, api_secret):
         self.program_type = parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
         self.api_key = api_key
@@ -179,6 +194,7 @@ class WebsocketManager:
 
 
 class MessageHandler:
+    """Handles incoming WebSocket messages and processes them according to the trading strategy."""
     def __init__(self, pump_and_dump : Strategy):
         self.pump_and_dump = pump_and_dump
 
@@ -192,7 +208,7 @@ class MessageHandler:
             print(f'Connection open at {datetime.datetime.now()} with rolling windows 1hour.')
             return
         self.pump_and_dump.update_parameters('1h', message['data'])
-        self.save_datas(message)
+        #self.save_datas(message)
         return None
 
     def message_processing_mini_ticker(self, _, source):
@@ -201,7 +217,7 @@ class MessageHandler:
             print(f'Connection open at {datetime.datetime.now()} with websocket mini ticker.')
             return None
         self.pump_and_dump.update_parameters(None, message['data'])
-        self.save_datas(message)
+        #self.save_datas(message)
         return None
 
     def message_processing_kline(self, _, source):
@@ -211,11 +227,12 @@ class MessageHandler:
             return None
         self.pump_and_dump.update_parameters('1m', message['data']['k'])
         self.pump_and_dump.take_decision(message['data'])
-        self.save_datas(message)
+        #self.save_datas(message)
         return None
 
     @staticmethod
     def save_datas(message):
+        """ Save the incoming message data to a file for historical analysis. (Currently not used)"""
         path = r'bot/data/historical_datas'
         if 'kline' in message['stream']:
             with open(
@@ -240,9 +257,7 @@ class MessageHandler:
                 f.write(json.dumps(message) + '\n')
 
     def message_handler_open_orders(self, _, source):
-        """
-        Get existing open orders to cancel them.
-        """
+        """Get existing open orders to cancel them."""
         list_crypto = []
         message = json.loads(source)
         result = message['result']
@@ -258,10 +273,12 @@ class MessageHandler:
         if message.get('result', 0) is None:
             return None
         if 'error' in message:
+            
             error : dict = message['error']
             logging.debug("Code : %s", error['code'])
             logging.debug("Message : %s", error['msg'])
             logging.debug("data_error : %s", error.get('data', None))
+            logging.debug(self.pump_and_dump.trading_manager.portfolio.actifs)
             return None
         result = message.get("result")
 
@@ -269,21 +286,10 @@ class MessageHandler:
             if result['cancelResult'] == 'SUCCESS' and result['newOrderResult'] == 'SUCCESS':
                 logging.debug('Order canceled successfully.')
         elif result['status'] == 'FILLED':
-            #client_order_id = result['clientOrderId']
-            #executed_base_qty = float(result['cummulativeQuoteQty'])
-            #executed_qty = float(result['executedQty'])
-            #working_time_order = datetime.datetime.fromtimestamp(int(result['workingTime'])/1000)
-            #side = result['side']
-            #fills = result['fills'][0]
-            #executed_price = float(fills['price'])
-            #ticker = result['symbol']
-            #commission = float(fills['commission'])
-            #commission_asset = fills['commissionAsset']
             pass
 
         elif result['status'] == 'NEW':
             pass
-            #pprint.pprint(message)
         else:
             pprint.pprint(message)
             pprint.pprint(result['status'])
@@ -292,7 +298,7 @@ class MessageHandler:
     def message_user_data(self, _, source):
         message : dict = json.loads(source)
         if message.get('e', None) == 'outboundAccountPosition':
-            pass#contient la balance avec l'asset qui a changé uniquement
+            pass
         elif message.get('e', None) == 'executionReport':
             side = message['S']
             if message.get('x', None) == 'CANCELED' and side == 'SELL':
@@ -306,7 +312,6 @@ class MessageHandler:
                     logging.debug("NEW BUY ORDER SEND")
                 logging.debug("Ticker %s | Stop_loss : %s", message['s'], message['P'])
                 logging.debug('---------------')
-
             elif message.get('x', None) == 'TRADE':
                 ticker = message['s']
                 executed_price = float(message['L'])
@@ -326,8 +331,8 @@ class MessageHandler:
                         executed_price
                     )
                 except Exception:
-                    # To Check
-                    print("error impossible de sell") 
+                    print(self.pump_and_dump.trading_manager.portfolio.actifs)
+
 
                 if side == 'BUY':
                     logging.debug("Ticker : %s | Prix d'achat : %s", message['s'], message['L'])
@@ -336,8 +341,19 @@ class MessageHandler:
                         args = (ticker, executed_price)
                     ).start()
                 elif side == 'SELL':
-                    logging.debug("Ticker : %s | USDT en plus : %s | Au prix : %s",
-                                  message['s'],
-                                  message['Z'],
-                                  message['L'])
+                    if message['s'].endswith('USDT'):
+                        logging.debug("Ticker : %s | USDC en plus : %s | Au prix : %s",
+                                    message['s'],
+                                    message['Y'],
+                                    message['L'])
+                    elif message['s'].endswith('TRY'):
+                        logging.debug("Ticker : %s | TRY en plus : %s | Au prix : %s",
+                                    message['s'],
+                                    message['Y'],
+                                    message['L']) 
+                    elif message['s'].endswith('BTC'):
+                        logging.debug("Ticker : %s | BTC en plus : %s | Au prix : %s",
+                                    message['s'],
+                                    message['Y'],
+                                    message['L'])
                 logging.debug('---------------')

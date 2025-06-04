@@ -147,7 +147,7 @@ class TradingManager(ABC):
 			elapsed_time += interval
 			remaining_time = total_duration - elapsed_time
 			print(f"Temps écoulé : {elapsed_time} s. Temps restant : {remaining_time} secondes.")
-			#self.screenshot(timestamp)
+			self.screenshot(timestamp)
 
 	def screenshot(self, timestamp = None):
 		print('-------------------')

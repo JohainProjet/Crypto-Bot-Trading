@@ -1,5 +1,6 @@
 import datetime
 import numpy as np
+import logging
 from collections import defaultdict
 from bot.utils.helpers import Portfolio, Parameters, TRADING_PAIRS
 from bot.strategy.base_strategy import Strategy
@@ -78,6 +79,8 @@ class PumpDump(Strategy):
 		return quantity_bought
 
 	def detect_potential_pump(self, pair, data):
+		""" This is the first check.
+		Detect potential pump based on the data received from the websocket stream."""
 		pair_in_usdt = data['k']['s']
 		if pair in self.portfolio.actifs:
 			return False
@@ -90,7 +93,7 @@ class PumpDump(Strategy):
 		volume_1m = self.data_storage[row_idx, self.COLUMN_MAPPING[("Volume", '1m')]]
 		volume_1h = self.data_storage[row_idx, self.COLUMN_MAPPING[("Volume", "1h")]]
 
-		#print("Volume", volume_m, volume_1h, ticker)
+		logging.DEBUG("Volume", volume_1m, volume_1h, pair)
 
 		if self.parameters.SPECIFIC_PARAMETERS['first_check_volume']*volume_1m <= volume_1h:
 			return False
@@ -98,7 +101,7 @@ class PumpDump(Strategy):
 		nb_of_trades_1m = self.data_storage[row_idx, self.COLUMN_MAPPING[("NbOfTrades", '1m')]]
 		nb_of_trades_1h = self.data_storage[row_idx, self.COLUMN_MAPPING[("NbOfTrades", "1h")]]
 
-		#print("NbOftrades", nb_of_trades_m, nb_of_trades_1h)
+		logging.DEBUG("NbOftrades", nb_of_trades_1m, nb_of_trades_1h, pair)
 
 		if self.parameters.SPECIFIC_PARAMETERS['first_check_nb_of_trades']*nb_of_trades_1m <= nb_of_trades_1h:
 			return False
@@ -107,6 +110,7 @@ class PumpDump(Strategy):
 			row_idx, self.COLUMN_MAPPING[("Price is going up", "")]
 		]
 
+		logging.DEBUG("NbOftrades", nb_of_trades_1m, nb_of_trades_1h, pair)
 		#print('Price is going up', price_is_going_up)
 
 		if not price_is_going_up:
@@ -116,6 +120,9 @@ class PumpDump(Strategy):
 		self.potential_pump[pair].append(data)
 
 	def confirm_pump(self, data):
+		""" This is the second check.
+		Confirm the pump based on the last kline data received and the current kline data.
+		The idea is to check if their is a real pump dynamic."""
 		current_event_time = data['E']
 		current_k = data['k']
 		current_volume = float(current_k['v'])
@@ -209,6 +216,7 @@ class PumpDump(Strategy):
 		return cash_used
 
 	def buy_decision(self, data):
+		""" Send a buy order to the trading manager. (Make necessary checks and conversions)"""
 		now = datetime.datetime.fromtimestamp(int(data['E'])/1000)
 		k = data['k']
 		original_pair = k['s']
@@ -314,6 +322,7 @@ class PumpDump(Strategy):
 		return None
 
 	def take_decision(self, data):
+		""" Take decision based on the data received from the websocket stream."""
 		pair_in_usdt = data['k']['s']
 		pair = pair_in_usdt[:-4] + self.get_trading_pair(pair_in_usdt[:-4]) #Pair in USDC/TRY/BTC
 		
@@ -357,7 +366,8 @@ class PumpDump(Strategy):
 			self.data_storage[row_idx, self.COLUMN_MAPPING[("Price is going up", "")]] = price_is_going_up
 			
 	def update_parameters(self, websocket_stream : str, k):
-		""" Update parameters (volume/variation/nb of trades)"""
+		"""Update trading parameters such as volume, price variation, and number of trades.
+		Uses the most recent window of prices for z-score calculations."""
 		pair : str = k['s']
 		current_price = float(k['c'])
 		if pair.endswith('USDT'):

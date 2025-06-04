@@ -12,6 +12,7 @@ from bot.utils.helpers import PAIRS_FOR_BACKTEST
 
 
 class BackTesting(TradingManager):
+    """ BackTesting class for simulating trading strategies on historical data."""
     def __init__(self, parameters, portfolio, simulation_saver):
         super().__init__(parameters,  portfolio, simulation_saver)
         self.list_tickers = parameters.GLOBAL_PARAMETERS['LIST_TICKERS']
@@ -71,6 +72,13 @@ class BackTesting(TradingManager):
         return month_list
 
     def start(self)->None:
+        """ 
+        Start the backtesting process by iterating through historical data.
+        Every month of data is processed, and events are handled based on the time intervals.
+        The method generates a list of months based on the start and end dates, processes each month
+        by filling a dictionary with time as keys and events (list) as values. 
+        It then iterates through the events.
+        """
         t1=time.time()
         list_months = self.generate_list_month()
         for month in tqdm(list_months):
@@ -107,6 +115,10 @@ class BackTesting(TradingManager):
             f.write("\n\n")
 
     def buy(self, pair, quote_order_qty, excecuted_price=0, time_=0):
+        """ 
+        Simulate a buy order by calculating the executed quantity 
+        based on the quote order quantity and executed price.
+        """
         executed_qty = quote_order_qty/excecuted_price
         step_size = self.get_ticker_tick_size(pair)[0]
         executed_qty = round((executed_qty//step_size)*step_size,8)
@@ -126,7 +138,11 @@ class BackTesting(TradingManager):
         self.orders[pair] = {"quantity" : float(quantity_bought),
                                'stopLossPrice' : stop_loss_price}
 
-    def check_stop_losses(self, ticker, data):
+    def check_stop_losses(self, ticker : str, data : dict):
+        """
+        Check if the current price is below the stop loss price for a given ticker.
+        If it is, execute a sell order and remove the ticker from the orders dictionary.
+        """
         working_time_order = datetime.datetime.fromtimestamp(int(data['E'])/1000)
 
         current_price = self.datas.strategy.prices[ticker][-1]
@@ -144,15 +160,22 @@ class BackTesting(TradingManager):
 
 
 class DataManager:
+    """
+    DataManager class for managing historical data and processing kline updates.
+    One of the main problem is that only klines are available in the websocket,
+    so we need to create rolling windows and miniTicker from kline.
+    """
     dict_time = defaultdict(list)
     def __init__(self):
         self.path = r'bot/data/historical_datas_from_api'
+
+        #Used to store the klines
         self.klines : dict = {}
         self.rolling_window = {}
         self.kline_write_counter = {}
         self.window_ready = set()
 
-        #for rolling
+        #Used to store the current state of the rolling window
         self.current_volume = {}
         self.current_nb_of_trades = {}
         self.current_quantities = {}
@@ -160,7 +183,8 @@ class DataManager:
         self.volume_to_subtract = {}
         self.current_nb_of_trades_to_substract = {}
         self.current_quantities_to_substract = {}
-         #test
+        
+        #Used for debugging
         self.nb_of_trades = 0
         self.count = 0
         self.start_date = None
@@ -170,6 +194,7 @@ class DataManager:
         self.mini_ticker = {}
 
     def create_kline_1s(self, ticker, row):
+        """"""
         t = int(row[0]//1000)
         o = row[1]
         h = row[2]
@@ -207,9 +232,9 @@ class DataManager:
         return k
 
     def update_klines(self, k_1s):
+        """ Create from kline 1s a kline 1m and store it in the klines dictionary."""
         symbol = k_1s['s']
-        minute_timestamp = k_1s['t'] // 60000 * 60000  # début de la minute
-        #Rajouter un compteur > 60 pour être sûr qu'on a bien une vraie kline, pareil pour rolling windows faudra > 3600
+        minute_timestamp = k_1s['t'] // 60000 * 60000
 
         symbol_data = self.klines.get(symbol)
         if symbol_data:
@@ -266,6 +291,7 @@ class DataManager:
                     f.write(json.dumps(self.klines[symbol])+ '\n') """
 
     def update_rolling_window(self, k_1s):
+        """ Create from kline 1s a rolling window 1h and store it in the rolling_window dictionary."""
         symbol = k_1s['s']
         if symbol not in self.rolling_window:
             self.rolling_window[symbol] = deque()
@@ -357,6 +383,7 @@ class DataManager:
                 f.write(json.dumps(full_kline)+ '\n') """
 
     def update_mini_ticker(self, k_1s):
+        """ Create from kline 1s a mini ticker and store it in the mini_ticker dictionary."""
         symbol = k_1s['s']
         E = k_1s['E']
         data = {
@@ -381,22 +408,20 @@ class DataManager:
 
     def extract_zip_stream(self, zip_path):
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            # On suppose qu'il y a un seul fichier à l'intérieur
             for name in zip_ref.namelist():
                 if name.endswith('.csv') or name.endswith('.csv.gz'):
                     return zip_ref.open(name)
             raise FileNotFoundError("Aucun fichier .csv ou .csv.gz trouvé dans le zip.")
 
     def extract_zip(self, zip_path):
-        # Crée le dossier d'extraction
+        """ Extracts a zip file and returns the path of the first .csv or .csv.gz file found inside. 
+        (Currently not used)."""
         extract_dir = os.path.splitext(zip_path)[0]
         os.makedirs(extract_dir, exist_ok=True)
 
-        # Extraction du zip
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_dir)
 
-        # Recherche du premier fichier CSV ou CSV.GZ extrait
         for file in os.listdir(extract_dir):
             if file.endswith('.csv') or file.endswith('.csv.gz'):
                 file_path = os.path.join(extract_dir, file)
