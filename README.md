@@ -65,7 +65,7 @@ Implements the `TradingManager` interface for **real-time trading**. It:
 * Places market or limit orders
 * Monitors open positions and logs actual results
 
-Useful for production deployment once your detection strategy is trusted.
+Useful for production deployment.
 
 ---
 
