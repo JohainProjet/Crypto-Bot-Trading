@@ -5,7 +5,6 @@ import json
 import logging
 import pprint
 import threading
-from typing import List
 from binance.spot import Spot as Client
 from binance.websocket.spot.websocket_stream import SpotWebsocketStreamClient
 from binance.websocket.spot.websocket_api import SpotWebsocketAPIClient
@@ -13,10 +12,11 @@ from bot.trading.base_trading import TradingManager, SimulationSaver
 from bot.strategy.base_strategy import Strategy
 
 class LiveTrading(TradingManager):
-    def __init__(self, parameters, portfolio, list_tickers, simulation_saver : SimulationSaver):
+    """Manages live trading operations using Binance's WebSocket API."""
+    def __init__(self, parameters, portfolio, simulation_saver : SimulationSaver):
         super().__init__(parameters, portfolio, simulation_saver)
-        self.websocket_manager = WebsocketManager(parameters.program_type, self.api_key, self.api_secret)
-        self.list_tickers : List[str] = list_tickers
+        self.websocket_manager = WebsocketManager(parameters, self.api_key, self.api_secret)
+        self.parameters = parameters
 
     def get_ticker_tick_size(self, ticker):
         resp = self.websocket_manager.client.exchange_info()['symbols']
@@ -26,19 +26,25 @@ class LiveTrading(TradingManager):
         return None
 
     def start(self):
-        list_ticker_kline3m = [ticker.lower()+'@kline_3m' for ticker in self.list_tickers]
-        list_ticker_rolling1h = [ticker.lower()+'@ticker_1h' for ticker in self.list_tickers]
+        """Start the live trading session by subscribing to necessary WebSocket streams.
+         * Rolling windows 1h 
+         * Kline 1m
+         * Mini ticker.
+        """
+        list_tickers : list[str] = self.parameters.GLOBAL_PARAMETERS["LIST_TICKERS"]
+        list_ticker_kline = [ticker.lower()+f'@kline_1m' for ticker in list_tickers if ticker.endswith('USDT')]
+        list_ticker_rolling1h = [ticker.lower()+'@ticker_1h' for ticker in list_tickers if ticker.endswith('USDT')]
+        list_ticker_price_update = [ticker.lower()+'@miniTicker' for ticker in list_tickers if not ticker.endswith('USDT')]
 
-        self.websocket_manager.ws_client_kline_3m.subscribe(stream = list_ticker_kline3m)
+        self.websocket_manager.ws_client_kline.subscribe(stream = list_ticker_kline)
         self.websocket_manager.ws_client_rolling_1h.subscribe(stream = list_ticker_rolling1h)
+        self.websocket_manager.ws_client_mini_ticker.subscribe(stream = list_ticker_price_update)
 
         logging.info('start sleep')
-        self.periodic_sleep(self.parameters.duration_time, 300)
+        self.periodic_sleep(self.parameters.GLOBAL_PARAMETERS['DURATION_TIME'], 300)
         self.stop()
 
-
     def stop(self):
-        #Ici appeler portfolio evaluate
         logging.info("unsubscribe user data")
         self.portfolio.evaluate_portfolio_value()
         self.websocket_manager.ws_user_data.user_data(
@@ -46,10 +52,12 @@ class LiveTrading(TradingManager):
             action=SpotWebsocketStreamClient.ACTION_UNSUBSCRIBE
         )
         self.websocket_manager.ws_user_data.stop()
-        self.websocket_manager.ws_client_kline_3m.stop()
+        self.websocket_manager.ws_client_kline.stop()
         self.websocket_manager.ws_client_rolling_1h.stop()
+        self.websocket_manager.ws_client_mini_ticker.stop()
 
     def place_stop_loss(self, ticker, quantity_bought, stop_loss_price):
+        """ Places a stop loss order for a given ticker."""
         self.websocket_manager.ws_api_client.new_order(symbol=ticker,
                                                         side="SELL",
                                                         type="STOP_LOSS",
@@ -58,11 +66,18 @@ class LiveTrading(TradingManager):
                                                         newClientOrderId=f'stop_loss_{ticker}',
                                                         newOrderRespType="FULL")
 
-    def get_open_orders_and_cancel(self):
+    def get_open_orders_and_cancel(self)->None:
+        """
+        Retrieves all current open orders and cancels them.
+        This is useful to ensure that no previous orders interfere with the current trading strategy. 
+        Returns:
+            None
+        """
+        program_type : str = self.parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
         stream_url = None
-        if self.parameters.program_type == 'TEST':
+        if program_type == 'TEST':
             stream_url="wss://ws-api.testnet.binance.vision/ws-api/v3"
-        elif self.parameters.program_type == 'PROD':
+        elif program_type == 'PROD':
             stream_url = "wss://ws-api.binance.com:443/ws-api/v3"
 
         client = SpotWebsocketAPIClient(
@@ -74,16 +89,19 @@ class LiveTrading(TradingManager):
         client.get_open_orders()
         time.sleep(15)
         client.stop()
+        return None
 
-    def buy(self, ticker, cash_used, excecuted_price=0, time_=0):
+    def buy(self, ticker, quote_order_qty, excecuted_price=0, time_=0):
+        """ Place a market order to buy a ticker with a specified quote order quantity."""
         return self.websocket_manager.ws_api_client.new_order(symbol=ticker,
                                                             side="BUY",
                                                             type="MARKET",
-                                                            quoteOrderQty=cash_used,
+                                                            quoteOrderQty=quote_order_qty,
                                                             newClientOrderId=f'buy_market_{ticker}',
                                                             newOrderRespType="FULL")
 
     def cancel_replace(self, ticker, quantity_bought, new_stop_loss_price):
+        """Cancel the existing stop loss order and replace it with a new one at a different price."""
         self.websocket_manager.ws_api_client.cancel_replace_order(
             ticker,
             side='SELL',
@@ -98,8 +116,9 @@ class LiveTrading(TradingManager):
 
 
 class WebsocketManager:
-    def __init__(self, program_type : str, api_key, api_secret):
-        self.program_type = program_type
+    """Manages WebSocket connections for live trading operations."""
+    def __init__(self, parameters, api_key, api_secret):
+        self.program_type = parameters.GLOBAL_PARAMETERS['DEFAULT_PROGRAM_MODE']
         self.api_key = api_key
         self.api_secret = api_secret
         self.message_handler : MessageHandler = MessageHandler(None)
@@ -107,8 +126,9 @@ class WebsocketManager:
         self.client = self.create_client()
         self.listen_key = self.get_listen_key()
         self.ws_user_data = self.create_websocket_stream('userData')
-        self.ws_client_kline_3m = self.create_websocket_stream('kline3m')
+        self.ws_client_kline = self.create_websocket_stream('kline')
         self.ws_client_rolling_1h = self.create_websocket_stream('rolling1h')
+        self.ws_client_mini_ticker = self.create_websocket_stream('mini_ticker')
 
     def create_client(self):
         base_url_client = None
@@ -147,7 +167,7 @@ class WebsocketManager:
             )
             ws_user_data.user_data(listen_key=self.listen_key)
             return ws_user_data
-        if on_message_stream_name == 'kline3m':
+        elif on_message_stream_name == 'kline':
             #Si on utilise "wss://stream.testnet.binance.vision",
             # #on va récupérer les données du test net qui sont très peu représentatatives du marché
             stream_url = "wss://stream.binance.com:9443"
@@ -156,17 +176,25 @@ class WebsocketManager:
                 on_message=self.message_handler.message_processing_kline,
                 is_combined=True
             )
-        if on_message_stream_name == 'rolling1h':
+        elif on_message_stream_name == 'rolling1h':
             stream_url = "wss://stream.binance.com:9443"
             return SpotWebsocketStreamClient(
                 stream_url=stream_url,
                 on_message=self.message_handler.message_processing_rolling,
                 is_combined=True
             )
+        elif on_message_stream_name == 'mini_ticker':
+            stream_url = "wss://stream.binance.com:9443"
+            return SpotWebsocketStreamClient(
+                stream_url=stream_url,
+                on_message=self.message_handler.message_processing_mini_ticker,
+                is_combined=True
+            )
         raise ValueError('Wrong parameter')
 
 
 class MessageHandler:
+    """Handles incoming WebSocket messages and processes them according to the trading strategy."""
     def __init__(self, pump_and_dump : Strategy):
         self.pump_and_dump = pump_and_dump
 
@@ -180,21 +208,32 @@ class MessageHandler:
             print(f'Connection open at {datetime.datetime.now()} with rolling windows 1hour.')
             return
         self.pump_and_dump.update_parameters('1h', message['data'])
-        self.save_datas(message)
+        #self.save_datas(message)
+        return None
+
+    def message_processing_mini_ticker(self, _, source):
+        message : dict = json.loads(source)
+        if message.get('result',0) is None:
+            print(f'Connection open at {datetime.datetime.now()} with websocket mini ticker.')
+            return None
+        self.pump_and_dump.update_parameters(None, message['data'])
+        #self.save_datas(message)
+        return None
 
     def message_processing_kline(self, _, source):
         message : dict = json.loads(source)
         if message.get('result',0) is None:
-            print(f'Connection open at {datetime.datetime.now()} with websocket kline 3minutes.')
+            print(f'Connection open at {datetime.datetime.now()} with websocket kline.')
             return None
-        self.pump_and_dump.update_parameters(self.pump_and_dump.parameters.kline_type, message['data']['k'])
+        self.pump_and_dump.update_parameters('1m', message['data']['k'])
         self.pump_and_dump.take_decision(message['data'])
-        self.save_datas(message)
+        #self.save_datas(message)
         return None
 
     @staticmethod
     def save_datas(message):
-        path = r'bot\data\historical_datas'
+        """ Save the incoming message data to a file for historical analysis. (Currently not used)"""
+        path = r'bot/data/historical_datas'
         if 'kline' in message['stream']:
             with open(
                 os.path.join(path, 'kline1m', message['data']['s'] + '.txt'),
@@ -202,6 +241,13 @@ class MessageHandler:
                 encoding= 'utf-8'
             ) as f:
                 f.write(json.dumps(message)+ '\n')
+        elif 'miniTicker' in message['stream']:
+            with open(
+                os.path.join(path, 'mini_ticker', message['data']['s'] + '.txt'),
+                'a', 
+                encoding = 'utf-8'
+            ) as f:
+                f.write(json.dumps(message) + '\n')
         elif 'ticker' in message['stream']:
             with open(
                 os.path.join(path, 'historical_window_1h', message['data']['s'] + '.txt'),
@@ -211,9 +257,7 @@ class MessageHandler:
                 f.write(json.dumps(message) + '\n')
 
     def message_handler_open_orders(self, _, source):
-        """
-        Get existing open orders to cancel them.
-        """
+        """Get existing open orders to cancel them."""
         list_crypto = []
         message = json.loads(source)
         result = message['result']
@@ -229,10 +273,12 @@ class MessageHandler:
         if message.get('result', 0) is None:
             return None
         if 'error' in message:
+            
             error : dict = message['error']
             logging.debug("Code : %s", error['code'])
             logging.debug("Message : %s", error['msg'])
             logging.debug("data_error : %s", error.get('data', None))
+            logging.debug(self.pump_and_dump.trading_manager.portfolio.actifs)
             return None
         result = message.get("result")
 
@@ -240,21 +286,10 @@ class MessageHandler:
             if result['cancelResult'] == 'SUCCESS' and result['newOrderResult'] == 'SUCCESS':
                 logging.debug('Order canceled successfully.')
         elif result['status'] == 'FILLED':
-            #client_order_id = result['clientOrderId']
-            #executed_base_qty = float(result['cummulativeQuoteQty'])
-            #executed_qty = float(result['executedQty'])
-            #working_time_order = datetime.datetime.fromtimestamp(int(result['workingTime'])/1000)
-            #side = result['side']
-            #fills = result['fills'][0]
-            #executed_price = float(fills['price'])
-            #ticker = result['symbol']
-            #commission = float(fills['commission'])
-            #commission_asset = fills['commissionAsset']
             pass
 
         elif result['status'] == 'NEW':
             pass
-            #pprint.pprint(message)
         else:
             pprint.pprint(message)
             pprint.pprint(result['status'])
@@ -263,7 +298,7 @@ class MessageHandler:
     def message_user_data(self, _, source):
         message : dict = json.loads(source)
         if message.get('e', None) == 'outboundAccountPosition':
-            pass#contient la balance avec l'asset qui a changé uniquement
+            pass
         elif message.get('e', None) == 'executionReport':
             side = message['S']
             if message.get('x', None) == 'CANCELED' and side == 'SELL':
@@ -277,27 +312,17 @@ class MessageHandler:
                     logging.debug("NEW BUY ORDER SEND")
                 logging.debug("Ticker %s | Stop_loss : %s", message['s'], message['P'])
                 logging.debug('---------------')
-
             elif message.get('x', None) == 'TRADE':
                 ticker = message['s']
                 executed_price = float(message['L'])
                 logging.debug('%s DONE', side)
-                if side == 'BUY':
-                    logging.debug("Ticker : %s | Prix d'achat : %s", message['s'], message['L'])
-                    threading.Thread(
-                        target=self.pump_and_dump.define_stop_losses,
-                        args = (ticker, executed_price)
-                    ).start()
-                elif side == 'SELL':
-                    logging.debug("Ticker : %s | USDT en plus : %s | Au prix : %s",
-                                  message['s'],
-                                  message['Z'],
-                                  message['L'])
-                logging.debug('---------------')
                 working_time_order = datetime.datetime.fromtimestamp(int(message['T'])/1000)
                 executed_qty = float(message['l'])
+                commission, commission_asset = float(message['n']), message['N']
+
+                print(side, working_time_order, ticker, executed_qty, executed_price, commission, commission_asset)
+
                 try:
-                    print(side, working_time_order, ticker, executed_qty, executed_price)
                     self.pump_and_dump.trading_manager.portfolio.transaction_order(
                         side,
                         working_time_order,
@@ -306,6 +331,29 @@ class MessageHandler:
                         executed_price
                     )
                 except Exception:
-                    #Bizarre cette erreur s'est déclenchée alors que j'ai vendu tout,
-                    # #y'a un problème bizarre avec ce try peut-être
-                    print("error impossible de sell") 
+                    print(self.pump_and_dump.trading_manager.portfolio.actifs)
+
+
+                if side == 'BUY':
+                    logging.debug("Ticker : %s | Prix d'achat : %s", message['s'], message['L'])
+                    threading.Thread(
+                        target=self.pump_and_dump.define_stop_losses,
+                        args = (ticker, executed_price)
+                    ).start()
+                elif side == 'SELL':
+                    if message['s'].endswith('USDT'):
+                        logging.debug("Ticker : %s | USDC en plus : %s | Au prix : %s",
+                                    message['s'],
+                                    message['Y'],
+                                    message['L'])
+                    elif message['s'].endswith('TRY'):
+                        logging.debug("Ticker : %s | TRY en plus : %s | Au prix : %s",
+                                    message['s'],
+                                    message['Y'],
+                                    message['L']) 
+                    elif message['s'].endswith('BTC'):
+                        logging.debug("Ticker : %s | BTC en plus : %s | Au prix : %s",
+                                    message['s'],
+                                    message['Y'],
+                                    message['L'])
+                logging.debug('---------------')

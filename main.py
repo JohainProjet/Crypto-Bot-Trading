@@ -1,116 +1,107 @@
 import datetime
 import logging
-import time
-import json
+import optuna
+import pytz
 from binance.lib.utils import config_logging
 from bot.strategy.pump_dump import PumpDump
-from bot.utils.helpers import Parameters, Portfolio, generate_parameters_combinaison, load_tickers_if_empty
+from bot.utils.helpers import Parameters, Portfolio, generate_parameters_combinaison, load_tickers
 from bot.trading.base_trading import SimulationSaver
 
-config_logging(logging, logging.INFO)
+config_logging(logging, logging.DEBUG)
 
+DEFAULT_PROGRAM_MODE = 'PROD'
+START_DATE = datetime.datetime(2025, 4, 1, 0, 0,0, tzinfo=pytz.utc)
+END_DATE = datetime.datetime(2025, 4, 1, 23, 59, 0, tzinfo=pytz.utc)
 
-DEFAULT_PROGRAM_MODE = 'BACKTEST'
-START_DATE = datetime.datetime(2025, 4, 13, 16, 0,0)
-END_DATE = datetime.datetime(2025, 4, 13, 20, 0, 0)
-TRADE_LOG_FILE = r"bot\results\TradesLogFile.txt"
-KLINE_TYPE = '1m'
-LIST_TICKERS = load_tickers_if_empty([])
-DURATION_TIME = 15000
-STD_ROLLING_SIZE = 100 #Used to clean position
-MEAN_ROLLING_SIZE = 100 #Used to clean position
+LIST_TICKERS = load_tickers()
+DURATION_TIME = 43200
+STD_ROLLING_SIZE = 100
+MEAN_ROLLING_SIZE = 100
 
-def main(simulation_saver : SimulationSaver, params : Parameters):
-    t1 = time.time()
-    if params.program_type == 'BACKTEST':
-        with open(TRADE_LOG_FILE, "a", encoding='utf-8') as f:
-            json.dump(params.limits, f)
-            f.write('\t')
-            f.write(str(params.stop_loss_prct))
-            f.write("\n")
+GLOBAL_PARAMETERS = {'DEFAULT_PROGRAM_MODE' : DEFAULT_PROGRAM_MODE,
+                     'START_DATE' : START_DATE,
+                     'END_DATE' : END_DATE,
+                     'LIST_TICKERS' : LIST_TICKERS,
+                     'DURATION_TIME' : DURATION_TIME,
+                     'STD_ROLLING_SIZE' : STD_ROLLING_SIZE,
+                     'MEAN_ROLLING_SIZE' : MEAN_ROLLING_SIZE
+                     }
 
-    portfolio = Portfolio(params.program_type, 500, {})
+def main(parameters : Parameters, simulation_saver : SimulationSaver)->float:
 
-    logging.info("Lancement de la stratégie avec %s , stop-loss: %s",
-                 params.limits,
-                 params.stop_loss_prct)
+    portfolio = Portfolio(DEFAULT_PROGRAM_MODE, 500, {})
 
-    strategy = PumpDump(params, portfolio, simulation_saver)
+    logging.info("Lancement de la stratégie avec les paramètres suivants : %s", parameters.SPECIFIC_PARAMETERS)
 
-    if params.program_type == 'BACKTEST':
+    strategy = PumpDump(parameters, portfolio, simulation_saver)
+
+    if DEFAULT_PROGRAM_MODE == 'BACKTEST':
         strategy.trading_manager.datas.set_strategy(strategy)
-    else:
+    elif DEFAULT_PROGRAM_MODE in ['PROD', 'TEST']:
         strategy.trading_manager.websocket_manager.message_handler.set_strategy(strategy)
         strategy.trading_manager.get_open_orders_and_cancel()
 
     strategy.trading_manager.start()
-    if params.program_type == 'BACKTEST':
-        with open(TRADE_LOG_FILE, "a", encoding='utf-8') as f:
-            f.write(f'Durée {time.time()- t1}.\n')
-            f.write("------------------------------------------------------------------\n")
-            f.write("\n")
-    if params.program_type == 'BACKTEST':
-        cash, assets_value = portfolio.evaluate_portfolio_value(END_DATE)
-    elif params.program_type in ['PROD', 'TEST']:
-        cash, assets_value = portfolio.evaluate_portfolio_value()
-    performance = cash + assets_value
-    return performance
+    cash, assets_value = portfolio.evaluate_portfolio_value()
+    portfolio_value = cash + assets_value
+    return portfolio_value
 
-def objective(trial):
-    """Définit la fonction de coût pour Optuna."""
-    # Optuna choisit dynamiquement les paramètres
+def objective(trial)-> float:
+    """
+    Used to optimize non global parameters
 
-    volumes = [1.5, 1.8, 2.1]
-    variations = [1.5, 1.8, 2.1]
-    nb_of_trades = [3, 4, 5]
-    stop_loss_prices = [0.97, 0.98, 0.99]
+    Args:
+        trial object from optuna library
 
-    volume = trial.suggest_categorical("volume", volumes)
-    variation = trial.suggest_categorical("variation", variations)
-    nb_of_trades = trial.suggest_categorical("nbOfTrades", nb_of_trades)
-    stop_loss_prct = trial.suggest_categorical("stop_loss_prct", stop_loss_prices)
+    Returns:
+        float: Value of the portfolio at the end of the simulation.
+    """
+    first_check_volume = trial.suggest_float('volume', 1, 5)
+    first_check_variation = trial.suggest_float('variation', 1, 5)
+    first_check_nb_of_trades = trial.suggest_float('nb_of_trades', 1, 5)
 
-    limits = {'volume': volume, 'variation': variation, 'nbOfTrades': nb_of_trades}
+    second_check_volume = trial.suggest_float('volume2', 0.01, 0.2)
+    second_check_nb_of_trades = trial.suggest_float('nb_of_trades2', 0.01, 0.2)
 
-    parameters = Parameters(DURATION_TIME,
-                            limits,
-                            stop_loss_prct,
-                            DEFAULT_PROGRAM_MODE,
-                            KLINE_TYPE,
-                            STD_ROLLING_SIZE,
-                            MEAN_ROLLING_SIZE,
-                            START_DATE,
-                            END_DATE,
-                            LIST_TICKERS)
+    stop_loss_prct = trial.suggest_float("stop_loss", 0.99, 0.995)
+    #stop_loss_adjust_stop_loss = trial.suggest_float("stop_loss_adjust", 0.97, 0.998)
+    stop_loss_prct = 0.99
+    stop_loss_adjust_stop_loss = 0.995
+    SPECIFIC_PARAMETERS = {'first_check_volume': first_check_volume, 
+                            'first_check_variation': first_check_variation, 
+                            'first_check_nb_of_trades': first_check_nb_of_trades,
+                            'second_check_volume' : second_check_volume,
+                            'second_check_nb_of_trades' : second_check_nb_of_trades,
+                            'stop_loss_prct' : stop_loss_prct,
+                            'stop_loss_adjust_stop_loss' : stop_loss_adjust_stop_loss}
+
+    parameters = Parameters(GLOBAL_PARAMETERS,
+                            SPECIFIC_PARAMETERS)
 
     simulation_saver = SimulationSaver()
-    return main(simulation_saver, parameters)
-
+    return main(parameters, simulation_saver)
 
 if __name__ == '__main__':
-    """ study = optuna.create_study(direction="maximize")  # On veut maximiser la performance
-    study.optimize(objective, n_trials=50)  # Lancer 50 simulations
+    # Try to find the best parameters to maximize returns on portfolio for the last month
+    if DEFAULT_PROGRAM_MODE == 'BACKTEST':    
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=100)
 
-    print("Meilleurs paramètres :", study.best_params)
-    print("Meilleur score :", study.best_value)"
-    """
+        print("Best trial:")
+        trial = study.best_trial
+        print(f"  Value: {trial.value}") #Value of the best simulation
+        print(f"  Params: {trial.params}") #Parameters values
+    else:
 
-    volume = 2.1
-    variation = 1.8
-    nb_of_trades = 4
-    stop_loss_prct = 0.97
+        SPECIFIC_PARAMETERS = {'first_check_volume': 3.2223601420837982, 
+                                'first_check_variation': 2.5693678102427668, 
+                                'first_check_nb_of_trades': 2.2978247931118673,
+                                'second_check_volume' : 0.09708600597432292,
+                                'second_check_nb_of_trades' : 0.10745036685493199,
+                                'stop_loss_prct' : 0.99,
+                                'stop_loss_adjust_stop_loss' : 0.995}
+        parameters = Parameters(GLOBAL_PARAMETERS,
+                                SPECIFIC_PARAMETERS)
 
-    limits = {'volume': volume, 'variation': variation, 'nbOfTrades': nb_of_trades}
-
-    parameters = Parameters(DURATION_TIME,
-                            limits,
-                            stop_loss_prct,
-                            DEFAULT_PROGRAM_MODE,
-                            KLINE_TYPE,
-                            STD_ROLLING_SIZE,
-                            MEAN_ROLLING_SIZE,
-                            START_DATE,
-                            END_DATE,
-                            LIST_TICKERS)
-    simulation_saver = SimulationSaver()
-    main(simulation_saver, parameters)
+        simulation_saver = SimulationSaver()
+        main(parameters, simulation_saver)

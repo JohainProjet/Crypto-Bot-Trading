@@ -6,3 +6,4 @@ src/spot_test_keys.txt
 test.txt
 config.py
 historical_datas
+historical_datas_from_api
